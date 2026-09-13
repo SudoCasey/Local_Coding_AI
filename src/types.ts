@@ -128,7 +128,9 @@ export interface WebviewToExtensionMessage {
     | 'attachActiveFile'
     | 'attachSelection'
     | 'toggleSidebarPosition'
-    | 'openSettings';
+    | 'openSettings'
+    | 'setWritePermissionMode'
+    | 'manageWritePermissions';
   payload?: any;
 }
 
@@ -150,6 +152,7 @@ export interface ExtensionToWebviewMessage {
     | 'contextCleared'
     | 'vramFreed'
     | 'ramFreed'
-    | 'contextAttached';
+    | 'contextAttached'
+    | 'writePermissionState';
   payload?: any;
 }

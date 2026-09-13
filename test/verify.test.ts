@@ -9,6 +9,11 @@ import {
   isLoopbackOllamaUrl,
   normalizeOllamaUrl,
 } from '../src/services/ollamaUrlPolicy';
+import {
+  describeWriteAction,
+  isWriteActionAllowlisted,
+  normalizeWriteActionType,
+} from '../src/services/writePermissionPolicy';
 import { OllamaModelInfo } from '../src/types';
 
 function assert(condition: boolean, message: string) {
@@ -164,6 +169,20 @@ async function runTests() {
   // Ensure Ollama launch configuration opts for background headless daemon
   assert(typeof ollama.launchOllama === 'function', 'OllamaService exposes launchOllama function');
   assert(typeof ollama.checkMultipleModelUpdates === 'function', 'OllamaService exposes multi-model update check');
+
+  console.log('\n--- Testing Write Permission Allowlist ---');
+  assert(normalizeWriteActionType('apply') === 'apply', 'Apply maps to apply action type');
+  assert(normalizeWriteActionType('insert') === 'insert', 'Insert maps to insert action type');
+  assert(normalizeWriteActionType('shell', 'npm install lodash') === 'npm', 'Shell npm install → npm');
+  assert(normalizeWriteActionType('shell', 'node ./scripts/build.js') === 'node', 'Shell node → node');
+  assert(
+    normalizeWriteActionType('shell', '"C:\\Program Files\\nodejs\\npm.cmd" install') === 'npm',
+    'Windows npm.cmd path → npm'
+  );
+  assert(describeWriteAction('npm') === 'npm …', 'Shell family describes with ellipsis');
+  assert(isWriteActionAllowlisted('npm', ['apply', 'npm']), 'Allowlisted npm is allowed');
+  assert(!isWriteActionAllowlisted('node', ['apply', 'npm']), 'Non-allowlisted node is blocked');
+  assert(isWriteActionAllowlisted('Apply', ['apply']), 'Allowlist match is case-insensitive');
 
   console.log('\nAll verification tests passed successfully!');
 }

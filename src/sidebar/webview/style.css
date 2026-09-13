@@ -104,6 +104,44 @@ body {
   background-color: rgba(255, 255, 255, 0.08);
 }
 
+.write-perm-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.write-perm-label {
+  font-size: 10px;
+  color: var(--fg-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+#write-perm-select {
+  flex: 1;
+  min-width: 0;
+  background-color: var(--bg-input);
+  color: var(--fg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 11px;
+  outline: none;
+}
+
+#write-perm-select:focus {
+  border-color: var(--accent-color);
+}
+
+.write-allowlist-count {
+  font-size: 10px;
+  color: var(--fg-secondary);
+  min-width: 1.2em;
+  text-align: center;
+  opacity: 0.85;
+}
+
 /* Pull Model Input & Dropdown */
 .pull-model-panel {
   display: flex;

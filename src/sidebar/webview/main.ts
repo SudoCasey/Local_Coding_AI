@@ -19,6 +19,9 @@ const attachments: Attachment[] = [];
 
 // DOM Elements
 const modelSelect = document.getElementById('model-select') as HTMLSelectElement;
+const writePermSelect = document.getElementById('write-perm-select') as HTMLSelectElement;
+const btnManageAllowlist = document.getElementById('btn-manage-allowlist') as HTMLButtonElement;
+const writeAllowlistCount = document.getElementById('write-allowlist-count') as HTMLSpanElement;
 const btnCheckUpdates = document.getElementById('btn-check-updates') as HTMLButtonElement;
 const btnAddModel = document.getElementById('btn-add-model') as HTMLButtonElement;
 const btnToggleSide = document.getElementById('btn-toggle-side') as HTMLButtonElement;
@@ -91,6 +94,31 @@ modelSelect.addEventListener('change', () => {
     payload: { model: selected },
   });
 });
+
+writePermSelect?.addEventListener('change', () => {
+  vscode.postMessage({
+    type: 'setWritePermissionMode',
+    payload: { mode: writePermSelect.value },
+  });
+});
+
+btnManageAllowlist?.addEventListener('click', () => {
+  vscode.postMessage({ type: 'manageWritePermissions' });
+});
+
+function applyWritePermissionState(mode?: string, allowlist?: string[]): void {
+  if (writePermSelect && (mode === 'allowlist' || mode === 'runEverything')) {
+    writePermSelect.value = mode;
+  }
+  if (writeAllowlistCount) {
+    const count = Array.isArray(allowlist) ? allowlist.length : 0;
+    writeAllowlistCount.textContent = String(count);
+    writeAllowlistCount.title =
+      count === 0
+        ? 'No allowlisted action types yet'
+        : `Allowlisted: ${allowlist!.join(', ')}`;
+  }
+}
 
 function toggleAutoPanel(show: boolean) {
   if (!autoRouterPanel) return;
@@ -735,7 +763,8 @@ window.addEventListener('message', (event) => {
 
   switch (message.type) {
     case 'modelsList': {
-      const { models, selectedModel, autoConfig } = message.payload;
+      const { models, selectedModel, autoConfig, writePermissionMode, writeAllowlist } =
+        message.payload;
       modelSelect.innerHTML = `<option value="auto">Auto Mode (Smart Router)</option>`;
       if (Array.isArray(models)) {
         latestInstalledModels = models.map((m: any) => m.name);
@@ -752,6 +781,12 @@ window.addEventListener('message', (event) => {
       }
       applyAutoConfig(autoConfig || latestAutoConfig, latestInstalledModels);
       toggleAutoPanel(modelSelect.value === 'auto');
+      applyWritePermissionState(writePermissionMode, writeAllowlist);
+      break;
+    }
+
+    case 'writePermissionState': {
+      applyWritePermissionState(message.payload?.mode, message.payload?.allowlist);
       break;
     }
 

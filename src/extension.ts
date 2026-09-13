@@ -8,6 +8,7 @@ import {
   normalizeOllamaUrl,
 } from './services/ollamaUrlPolicy';
 import { WorkspaceService } from './services/workspaceService';
+import { WritePermissionService } from './services/writePermission';
 import { SidebarProvider } from './sidebar/SidebarProvider';
 
 const ALLOWED_REMOTE_URLS_KEY = 'allowedRemoteOllamaUrls';
@@ -71,6 +72,7 @@ export function activate(context: vscode.ExtensionContext) {
   const workspaceRoot = workspaceService.getWorkspaceRoot();
   ollamaService = new OllamaService(DEFAULT_OLLAMA_URL);
   const contextManager = new ContextManager(ollamaService, workspaceRoot);
+  const writePermissions = new WritePermissionService();
   const modelRouter = new ModelRouter({
     mode: autoRouting ? 'auto' : 'manual',
     selectedModel: autoRouting ? 'auto' : primaryModel,
@@ -99,7 +101,8 @@ export function activate(context: vscode.ExtensionContext) {
     ollamaService,
     contextManager,
     modelRouter,
-    workspaceService
+    workspaceService,
+    writePermissions
   );
 
   // Register Webview View Providers for both Left (Activity Bar) and Right (Secondary Side Bar)
@@ -214,6 +217,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         sidebarProvider.refreshModelsAndStatus();
+        sidebarProvider.postWritePermissionState();
         await pollHardware();
       }
     })
@@ -273,6 +277,11 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('localCodingAI.checkModelUpdates', async () => {
       await sidebarProvider?.handleCheckModelUpdates();
+    }),
+
+    vscode.commands.registerCommand('localCodingAI.manageWritePermissions', async () => {
+      await writePermissions.showManageAllowlistQuickPick();
+      sidebarProvider?.postWritePermissionState();
     }),
 
     vscode.commands.registerCommand('localCodingAI.explainCode', async () => {

@@ -2,13 +2,13 @@
 
 **Completely offline, private VS Code coding assistant** powered by [Ollama](https://ollama.com) and open-weight models. No cloud APIs. Your prompts, code, and weights stay on your machine.
 
-[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](https://github.com/SudoCasey/Local_Coding_AI/releases)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/SudoCasey/Local_Coding_AI/releases)
 [![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85.0-007ACC.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-see%20repo-lightgrey.svg)](#license)
 
 | | |
 | :--- | :--- |
-| **Latest install package** | [⬇️ local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix) |
+| **Latest install package** | [⬇️ local-coding-ai-0.2.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.2.0/local-coding-ai-0.2.0.vsix) |
 | **Releases** | [github.com/SudoCasey/Local_Coding_AI/releases](https://github.com/SudoCasey/Local_Coding_AI/releases) |
 | **Backend** | Ollama at `http://127.0.0.1:11434` |
 | **Default models** | Qwen 2.5 Coder `1.5b` / `7b` / `14b` |
@@ -19,18 +19,25 @@
 
 ### Download & install
 
-**[⬇️ local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix)**
+**[⬇️ local-coding-ai-0.2.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.2.0/local-coding-ai-0.2.0.vsix)**
 
 ```powershell
-code --install-extension local-coding-ai-0.1.1.vsix
+code --install-extension local-coding-ai-0.2.0.vsix
 ```
 
 Or in VS Code: **Extensions** → `⋯` → **Install from VSIX…**
 
 | Version | Download | Summary |
 | :--- | :--- | :--- |
+| **0.2.0** | [local-coding-ai-0.2.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.2.0/local-coding-ai-0.2.0.vsix) | Allowlist / Run everything write-permission modes for Apply, Insert, and similar action types |
 | **0.1.1** | [local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix) | Fixes Windows Ollama hang/flash for larger models; security + efficiency hardening |
 | **0.1.0** | [local-coding-ai-0.1.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.0/local-coding-ai-0.1.0.vsix) | Initial public release — Auto mode, context limits, model pulls, resource cleanup |
+
+### 0.2.0
+
+Adds Allowlist / Run everything write-permission modes so users control whether Apply, Insert, and similar write action types need approval — with one-shot Run or persistent Add to Allowlist.
+
+Full notes: [`releases/v0.2.0.md`](./releases/v0.2.0.md) · [`CHANGELOG.md`](./CHANGELOG.md)
 
 ### 0.1.1
 
@@ -63,6 +70,7 @@ See [`releases/README.md`](./releases/README.md) for naming and how maintainers 
   - **Clear Context** — Reset conversation memory
   - **Clean RAM** — Drop local caches
 - **Editor integration** — Attach active file / selection; Copy / Insert / Apply on code blocks; Explain / Refactor / Tests / Fix from the editor context menu.
+- **Write permissions** — **Allowlist** (approve Apply/Insert and similar action types; Run once or Add to Allowlist) or **Run everything** (no prompts).
 - **Left or right sidebar** — Toggle Activity Bar vs Secondary Side Bar.
 - **Silent Ollama launch** — Starts `ollama serve` in the background with no console/GUI popup.
 - **Cleanup on exit** — Stops timers, aborts pulls/generation, clears context, unloads VRAM when the extension deactivates.
@@ -119,10 +127,10 @@ See [`docker/README.md`](./docker/README.md) for GPU passthrough details.
 
 ### From GitHub Releases (end users)
 
-Download **[local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix)** and run:
+Download **[local-coding-ai-0.2.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.2.0/local-coding-ai-0.2.0.vsix)** and run:
 
 ```powershell
-code --install-extension .\local-coding-ai-0.1.1.vsix
+code --install-extension .\local-coding-ai-0.2.0.vsix
 ```
 
 ### From source (developers)
@@ -139,7 +147,7 @@ npm run compile
 
 ```powershell
 npx @vscode/vsce package --no-dependencies
-code --install-extension .\local-coding-ai-0.1.0.vsix
+code --install-extension .\local-coding-ai-0.2.0.vsix
 ```
 
 ---
@@ -151,6 +159,7 @@ code --install-extension .\local-coding-ai-0.1.0.vsix
 3. Choose **Auto Mode (Smart Router)** or a specific installed model.
 4. In Auto mode, use the **Auto Mode Models** panel to view/swap Fast · Primary · Heavy, or download more.
 5. Chat, attach files/selections, and use code-block actions to insert or apply changes inside the workspace.
+6. Choose **AI writes → Allowlist** or **Run everything** to control write approvals (or Settings → `localCodingAI.writePermissionMode`).
 
 ---
 
@@ -171,6 +180,10 @@ VS Code Settings → search `localCodingAI`, or edit `settings.json`:
 | `localCodingAI.gpuLayers` | `99` | Layers offloaded to GPU |
 | `localCodingAI.temperature` | `0.2` | Sampling temperature |
 | `localCodingAI.keepAlive` | `10m` | How long models stay loaded after a request |
+| `localCodingAI.writePermissionMode` | `allowlist` | `allowlist` or `runEverything` for write actions |
+| `localCodingAI.writeAllowlist` | `[]` | Action types allowed without prompting in Allowlist mode |
+
+**Write permissions:** In Allowlist mode, Apply / Insert (and shell families like `npm` / `node`) ask for approval. **Run** allows once; **Add to Allowlist** remembers that action type. Manage the list via the sidebar lock button or **Local Coding AI: Manage Write Permissions**.
 
 **Context window** can also be changed from the sidebar **Ctx** pill (`2K`–`128K` or Custom) or the command **Local Coding AI: Set Context Window Limit**.
 
@@ -186,6 +199,7 @@ VS Code Settings → search `localCodingAI`, or edit `settings.json`:
 | `Local Coding AI: Compact Conversation Context` | Manual compaction |
 | `Local Coding AI: Clear Chat Context` | Reset conversation |
 | `Local Coding AI: Set Context Window Limit` | Change `num_ctx` |
+| `Local Coding AI: Manage Write Permissions` | Switch Allowlist / Run everything and edit allowlist |
 | `Local Coding AI: Toggle Sidebar Position` | Left ↔ right |
 | `Local Coding AI: Check for Model Updates` | Version / notes check |
 | Explain / Refactor / Generate Tests / Fix | Editor context menu |
@@ -245,6 +259,6 @@ See repository license information when published. Contributions and issues are 
 ## Links
 
 - **Releases (VSIX downloads):** https://github.com/SudoCasey/Local_Coding_AI/releases  
-- **Latest package:** [local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix)  
+- **Latest package:** [local-coding-ai-0.2.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.2.0/local-coding-ai-0.2.0.vsix)  
 - **Ollama:** https://ollama.com  
 - **Qwen 2.5 Coder library:** https://ollama.com/library/qwen2.5-coder

@@ -11,6 +11,11 @@ import {
   WebviewToExtensionMessage,
 } from '../types';
 import { clampContextWindow } from '../services/ollamaUrlPolicy';
+import {
+  normalizeWriteActionType,
+  WritePermissionMode,
+  WritePermissionService,
+} from '../services/writePermission';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'localCodingAI.chatView';
@@ -22,6 +27,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private contextManager: ContextManager;
   private modelRouter: ModelRouter;
   private workspaceService: WorkspaceService;
+  private writePermissions: WritePermissionService;
   private abortController?: AbortController;
   private activePulls: Map<string, AbortController> = new Map();
   private refreshTimer?: ReturnType<typeof setTimeout>;
@@ -31,12 +37,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     ollamaService: OllamaService,
     contextManager: ContextManager,
     modelRouter: ModelRouter,
-    workspaceService: WorkspaceService
+    workspaceService: WorkspaceService,
+    writePermissions?: WritePermissionService
   ) {
     this.ollamaService = ollamaService;
     this.contextManager = contextManager;
     this.modelRouter = modelRouter;
     this.workspaceService = workspaceService;
+    this.writePermissions = writePermissions || new WritePermissionService();
   }
 
   public resolveWebviewView(
@@ -155,6 +163,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           selectedModel: this.modelRouter.getSelectedModel(),
           mode: this.modelRouter.getMode(),
           autoConfig,
+          writePermissionMode: this.writePermissions.getMode(),
+          writeAllowlist: this.writePermissions.getAllowlist(),
         },
       });
       await this.sendHardwareStatus();
@@ -164,9 +174,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         payload: {
           isConnected: false,
           error: 'Cannot connect to Ollama. Ensure Ollama is running locally.',
+          writePermissionMode: this.writePermissions.getMode(),
+          writeAllowlist: this.writePermissions.getAllowlist(),
         },
       });
     }
+  }
+
+  public postWritePermissionState(): void {
+    this.postMessage({
+      type: 'writePermissionState',
+      payload: {
+        mode: this.writePermissions.getMode(),
+        allowlist: this.writePermissions.getAllowlist(),
+      },
+    });
   }
 
   public hasVisibleView(): boolean {
@@ -291,24 +313,57 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         if (!code) {
           break;
         }
-        await this.workspaceService.showDiffPreview(code, 'Proposed Apply');
-        const confirm = await vscode.window.showInformationMessage(
-          'Apply this code to the active file? This replaces the entire file.',
-          { modal: true },
-          'Apply',
-          'Cancel'
+        const actionType = normalizeWriteActionType('apply');
+        if (!this.writePermissions.isAllowed(actionType)) {
+          await this.workspaceService.showDiffPreview(code, 'Proposed Apply');
+        }
+        const allowed = await this.writePermissions.requestPermission(
+          actionType,
+          'This replaces the entire active file contents.'
         );
-        if (confirm === 'Apply') {
-          const ok = await this.workspaceService.applyCodeToActiveFile(code);
-          if (ok) {
-            vscode.window.showInformationMessage('Code applied to active editor.');
-          }
+        if (!allowed) {
+          break;
+        }
+        const ok = await this.workspaceService.applyCodeToActiveFile(code);
+        if (ok) {
+          vscode.window.showInformationMessage('Code applied to active editor.');
+          this.postWritePermissionState();
         }
         break;
       }
 
-      case 'insertCodeAtCursor':
-        await this.workspaceService.insertAtCursor(String(message.payload?.code || ''));
+      case 'insertCodeAtCursor': {
+        const code = String(message.payload?.code || '');
+        if (!code) {
+          break;
+        }
+        const actionType = normalizeWriteActionType('insert');
+        const allowed = await this.writePermissions.requestPermission(
+          actionType,
+          'This inserts the code block at the current cursor position.'
+        );
+        if (!allowed) {
+          break;
+        }
+        const ok = await this.workspaceService.insertAtCursor(code);
+        if (ok) {
+          this.postWritePermissionState();
+        }
+        break;
+      }
+
+      case 'setWritePermissionMode': {
+        const mode = message.payload?.mode as WritePermissionMode;
+        if (mode === 'allowlist' || mode === 'runEverything') {
+          await this.writePermissions.setMode(mode);
+          this.postWritePermissionState();
+        }
+        break;
+      }
+
+      case 'manageWritePermissions':
+        await this.writePermissions.showManageAllowlistQuickPick();
+        this.postWritePermissionState();
         break;
 
       case 'copyCode':
@@ -954,6 +1009,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             <path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm10 1H2a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8V3zm1 0v12h3a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1h-3z"/>
           </svg>
         </button>
+      </div>
+
+      <div class="write-perm-row">
+        <label for="write-perm-select" class="write-perm-label" title="Control how write actions (Apply, Insert, shell families like npm/node) are approved">
+          AI writes
+        </label>
+        <select id="write-perm-select" title="Allowlist requires approval; Run everything skips prompts">
+          <option value="allowlist">Allowlist</option>
+          <option value="runEverything">Run everything</option>
+        </select>
+        <button id="btn-manage-allowlist" class="icon-button" type="button" title="Manage write allowlist">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+            <path d="M8 1a4 4 0 0 0-4 4v1.09A2.5 2.5 0 0 0 2 8.5V13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8.5a2.5 2.5 0 0 0-2-2.41V5a4 4 0 0 0-4-4zm-2.5 5V5a2.5 2.5 0 0 1 5 0v1h-5z"/>
+          </svg>
+        </button>
+        <span id="write-allowlist-count" class="write-allowlist-count" title="Allowlisted action types">0</span>
       </div>
 
       <!-- Auto Mode Role Models -->
