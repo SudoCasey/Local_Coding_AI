@@ -1,50 +1,45 @@
 # Releases
 
-Published VS Code extension builds are distributed as GitHub Release assets named:
+VS Code extension builds are published as:
 
 ```text
 local-coding-ai-X.X.X.vsix
 ```
 
-where `X.X.X` matches the `"version"` field in [`package.json`](../package.json).
+Direct download URLs look like:
+
+```text
+https://github.com/SudoCasey/Local_Coding_AI/releases/download/vX.X.X/local-coding-ai-X.X.X.vsix
+```
 
 ## Current
 
-| Version | Asset | GitHub Release |
-| :--- | :--- | :--- |
-| **0.1.0** | `local-coding-ai-0.1.0.vsix` | [v0.1.0](https://github.com/SudoCasey/Local_Coding_AI/releases/tag/v0.1.0) |
+| Version | Download |
+| :--- | :--- |
+| **0.1.1** | [local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix) |
+| **0.1.0** | [local-coding-ai-0.1.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.0/local-coding-ai-0.1.0.vsix) |
 
-**Latest download:** https://github.com/SudoCasey/Local_Coding_AI/releases/latest
+**Latest:** [local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix)
 
-## Install a release asset
+## Install
 
 ```powershell
-# After downloading local-coding-ai-X.X.X.vsix from the Releases page:
-code --install-extension .\local-coding-ai-0.1.0.vsix
+code --install-extension .\local-coding-ai-0.1.1.vsix
 ```
 
 Or: VS Code → **Extensions** → `⋯` → **Install from VSIX…**
 
 ## Publish a new release (maintainers)
 
-1. Bump `"version"` in `package.json` (e.g. `0.1.0` → `0.2.0`).
+1. Bump `"version"` in `package.json` (e.g. `0.1.1` → `0.2.0`).
 2. Update the version table in this file and the main [`README.md`](../README.md) Releases section.
-3. Build the VSIX:
-
-```powershell
-npm install
-npm run compile
-npx @vscode/vsce package --no-dependencies
-```
-
-4. Commit, push, and tag:
+3. Commit, push, and tag:
 
 ```powershell
 git tag v0.2.0
 git push origin v0.2.0
 ```
 
-5. Create a GitHub Release for that tag and **attach** `local-coding-ai-X.X.X.vsix` as a binary asset  
-   (GitHub → **Releases** → **Draft a new release**, or use the [`release` workflow](../.github/workflows/release.yml) if enabled).
+4. The [`release` workflow](../.github/workflows/release.yml) builds the VSIX and publishes a GitHub Release with a direct download link.
 
-> `.vsix` files are gitignored and should **not** be committed to the repository. Always attach them on the Releases page.
+> `.vsix` files are gitignored and should **not** be committed to the repository.

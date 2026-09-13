@@ -2,7 +2,13 @@ import * as path from 'path';
 import { ContextManager } from '../src/services/contextManager';
 import { ModelRouter } from '../src/services/modelRouter';
 import { OllamaService } from '../src/services/ollamaService';
-import { WorkspaceService } from '../src/services/workspaceService';
+import { spawnDetachedHidden, spawnGuiDetached } from '../src/services/hiddenProcess';
+import {
+  clampContextWindow,
+  DEFAULT_OLLAMA_URL,
+  isLoopbackOllamaUrl,
+  normalizeOllamaUrl,
+} from '../src/services/ollamaUrlPolicy';
 import { OllamaModelInfo } from '../src/types';
 
 function assert(condition: boolean, message: string) {
@@ -18,6 +24,21 @@ async function runTests() {
   assert(ollama.getBaseUrl() === 'http://127.0.0.1:11434', 'Base URL is normalized');
   ollama.setBaseUrl('http://127.0.0.1:11434/');
   assert(ollama.getBaseUrl() === 'http://127.0.0.1:11434', 'Trailing slashes stripped');
+
+  console.log('\n--- Testing Ollama URL policy ---');
+  assert(isLoopbackOllamaUrl('http://127.0.0.1:11434'), '127.0.0.1 is loopback');
+  assert(isLoopbackOllamaUrl('http://localhost:11434/'), 'localhost is loopback');
+  assert(isLoopbackOllamaUrl('http://[::1]:11434'), 'IPv6 loopback is allowed');
+  assert(!isLoopbackOllamaUrl('https://attacker.example/'), 'Remote HTTPS host is not loopback');
+  assert(!isLoopbackOllamaUrl('http://192.168.1.10:11434'), 'LAN IP is not loopback');
+  assert(normalizeOllamaUrl('http://127.0.0.1:11434///') === DEFAULT_OLLAMA_URL, 'URL normalize strips slashes');
+  assert(clampContextWindow(100) === 512, 'Context window floors at 512');
+  assert(clampContextWindow(9999999) === 1048576, 'Context window caps at 1,048,576');
+  assert(clampContextWindow(Number.NaN) === 16384, 'Invalid context falls back to 16384');
+
+  console.log('\n--- Testing Hidden Process Launch ---');
+  assert(typeof spawnDetachedHidden === 'function', 'Hidden spawn helper is exported');
+  assert(typeof spawnGuiDetached === 'function', 'GUI spawn helper is exported');
 
   console.log('\n--- Testing ModelRouter ---');
   const router = new ModelRouter({

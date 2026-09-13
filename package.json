@@ -2,7 +2,7 @@
   "name": "local-coding-ai",
   "displayName": "Local Coding AI",
   "description": "Completely offline, local VS Code coding AI assistant powered by Ollama and open-weight models.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "local-coding-ai",
   "repository": {
     "type": "git",
@@ -201,7 +201,7 @@
         "localCodingAI.ollamaUrl": {
           "type": "string",
           "default": "http://127.0.0.1:11434",
-          "description": "URL of the local Ollama API server (native or Docker)."
+          "description": "URL of the Ollama API. Loopback (127.0.0.1 / localhost) is used by default. Remote URLs require confirmation because chat and attached files are sent there."
         },
         "localCodingAI.primaryModel": {
           "type": "string",
@@ -226,7 +226,9 @@
         "localCodingAI.contextWindow": {
           "type": "number",
           "default": 16384,
-          "description": "Context window size (num_ctx in tokens) requested from Ollama."
+          "minimum": 512,
+          "maximum": 1048576,
+          "description": "Context window size (num_ctx in tokens) requested from Ollama. Clamped between 512 and 1,048,576."
         },
         "localCodingAI.autoCompactionThreshold": {
           "type": "number",

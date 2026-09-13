@@ -1,9 +1,5 @@
-import { spawn } from 'child_process';
 import * as fs from 'fs';
-import * as http from 'http';
-import * as https from 'https';
 import * as path from 'path';
-import { URL } from 'url';
 import {
   ChatMessage,
   HardwareStatus,
@@ -13,16 +9,23 @@ import {
   OllamaModelInfo,
   RunningModelInfo,
 } from '../types';
+import { spawnDetachedHidden, spawnGuiDetached } from './hiddenProcess';
+import { DEFAULT_OLLAMA_URL, normalizeOllamaUrl } from './ollamaUrlPolicy';
+
+class OllamaStreamError extends Error {}
+
+const FIRST_TOKEN_TIMEOUT_MS = 120000;
+const LOAD_STATUS_INTERVAL_MS = 8000;
 
 export class OllamaService {
   private baseUrl: string;
 
-  constructor(baseUrl: string = 'http://127.0.0.1:11434') {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
+  constructor(baseUrl: string = DEFAULT_OLLAMA_URL) {
+    this.baseUrl = normalizeOllamaUrl(baseUrl);
   }
 
   public setBaseUrl(url: string): void {
-    this.baseUrl = url.replace(/\/+$/, '');
+    this.baseUrl = normalizeOllamaUrl(url);
   }
 
   public getBaseUrl(): string {
@@ -54,32 +57,51 @@ export class OllamaService {
 
     let launched = false;
     const isWindows = process.platform === 'win32';
+    const serveEnv = {
+      ...process.env,
+      OLLAMA_HOST: '127.0.0.1:11434',
+    };
 
     if (isWindows) {
       const localAppData = process.env.LOCALAPPDATA || '';
       const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
       const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
-      const candidatePaths = [
+      const appCandidates = [
+        path.join(localAppData, 'Programs', 'Ollama', 'ollama app.exe'),
+        path.join(programFiles, 'Ollama', 'ollama app.exe'),
+        path.join(programFilesX86, 'Ollama', 'ollama app.exe'),
+      ];
+      const serveCandidates = [
         path.join(localAppData, 'Programs', 'Ollama', 'ollama.exe'),
         path.join(programFiles, 'Ollama', 'ollama.exe'),
         path.join(programFilesX86, 'Ollama', 'ollama.exe'),
       ];
 
-      for (const exePath of candidatePaths) {
-        if (fs.existsSync(exePath)) {
+      // Prefer the tray GUI. It is a Windows GUI-subsystem binary, so it
+      // never allocates a CMD window, and it spawns GPU runners correctly.
+      // Hidden `ollama.exe serve` can deadlock llama-server on model load.
+      for (const appPath of appCandidates) {
+        if (fs.existsSync(appPath)) {
           try {
-            // Launch pure headless daemon in background with windowsHide
-            const child = spawn(exePath, ['serve'], {
-              detached: true,
-              stdio: 'ignore',
-              windowsHide: true,
-              env: { ...process.env, OLLAMA_HOST: '127.0.0.1:11434' },
-            });
-            child.unref();
+            spawnGuiDetached(appPath, [], serveEnv);
             launched = true;
             break;
           } catch {
             // Try next candidate
+          }
+        }
+      }
+
+      if (!launched) {
+        for (const exePath of serveCandidates) {
+          if (fs.existsSync(exePath)) {
+            try {
+              spawnDetachedHidden(exePath, ['serve'], serveEnv);
+              launched = true;
+              break;
+            } catch {
+              // Try next candidate
+            }
           }
         }
       }
@@ -94,12 +116,7 @@ export class OllamaService {
       for (const exePath of candidatePaths) {
         if (fs.existsSync(exePath)) {
           try {
-            const child = spawn(exePath, ['serve'], {
-              detached: true,
-              stdio: 'ignore',
-              env: { ...process.env, OLLAMA_HOST: '127.0.0.1:11434' },
-            });
-            child.unref();
+            spawnDetachedHidden(exePath, ['serve'], serveEnv);
             launched = true;
             break;
           } catch {
@@ -110,16 +127,9 @@ export class OllamaService {
     }
 
     if (!launched) {
-      // Fallback: Attempt starting via command line 'ollama.exe serve' or 'ollama serve'
       try {
         const cmd = isWindows ? 'ollama.exe' : 'ollama';
-        const child = spawn(cmd, ['serve'], {
-          detached: true,
-          stdio: 'ignore',
-          windowsHide: true,
-          env: { ...process.env, OLLAMA_HOST: '127.0.0.1:11434' },
-        });
-        child.unref();
+        spawnDetachedHidden(cmd, ['serve'], serveEnv);
         launched = true;
       } catch {
         // Fallback failed
@@ -187,11 +197,31 @@ export class OllamaService {
   }
 
   /**
-   * Get hardware/VRAM status from Ollama
+   * Get hardware/VRAM status from Ollama using a single /api/ps call.
    */
   public async getHardwareStatus(): Promise<HardwareStatus> {
-    const isConn = await this.isAvailable();
-    if (!isConn) {
+    try {
+      const response = await this.fetchWithTimeout(`${this.baseUrl}/api/ps`, {
+        method: 'GET',
+        timeout: 3000,
+      });
+      if (!response.ok) {
+        return {
+          isConnected: false,
+          runningModels: [],
+          totalVramBytes: 0,
+          error: 'Ollama is not running. Please start Ollama or check URL settings.',
+        };
+      }
+      const data = (await response.json()) as { models?: RunningModelInfo[] };
+      const running = data.models || [];
+      const totalVram = running.reduce((sum, m) => sum + (m.size_vram || 0), 0);
+      return {
+        isConnected: true,
+        runningModels: running,
+        totalVramBytes: totalVram,
+      };
+    } catch {
       return {
         isConnected: false,
         runningModels: [],
@@ -199,15 +229,25 @@ export class OllamaService {
         error: 'Ollama is not running. Please start Ollama or check URL settings.',
       };
     }
+  }
 
+  /**
+   * Unload every runner that is not the target model so a 7B load is not
+   * blocked behind a stuck 1.5B llama-server process.
+   */
+  public async ensureModelSlot(targetModel: string): Promise<void> {
+    const target = targetModel.toLowerCase();
     const running = await this.getRunningModels();
-    const totalVram = running.reduce((sum, m) => sum + (m.size_vram || 0), 0);
-
-    return {
-      isConnected: true,
-      runningModels: running,
-      totalVramBytes: totalVram,
-    };
+    for (const r of running) {
+      const name = (r.name || r.model || '').toLowerCase();
+      if (!name || name === target) {
+        continue;
+      }
+      await Promise.race([
+        this.unloadModel(r.name || r.model),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 4000)),
+      ]);
+    }
   }
 
   /**
@@ -219,7 +259,8 @@ export class OllamaService {
     options: OllamaChatOptions = {},
     keepAlive: string = '10m',
     onChunk: (chunk: string) => void,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    onStatus?: (status: string) => void
   ): Promise<string> {
     const payload = {
       model,
@@ -239,71 +280,122 @@ export class OllamaService {
       keep_alive: keepAlive,
     };
 
-    const targetUrl = `${this.baseUrl}/api/chat`;
-    const response = await fetch(targetUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: abortSignal,
-    });
+    const controller = new AbortController();
+    const onUserAbort = () => controller.abort();
+    abortSignal?.addEventListener('abort', onUserAbort);
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Ollama chat failed (${response.status}): ${errText}`);
-    }
-
-    if (!response.body) {
-      throw new Error('No response body returned from Ollama');
-    }
-
-    let fullText = '';
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+    let receivedOutput = false;
+    let timedOutWaitingForModel = false;
+    const loadTimer = setTimeout(() => {
+      if (!receivedOutput) {
+        timedOutWaitingForModel = true;
+        controller.abort();
+      }
+    }, FIRST_TOKEN_TIMEOUT_MS);
+    const statusTimer = setInterval(() => {
+      if (!receivedOutput) {
+        onStatus?.(`Still loading ${model} into VRAM… this can take up to a minute on first use.`);
+      }
+    }, LOAD_STATUS_INTERVAL_MS);
 
     try {
-      while (true) {
-        if (abortSignal?.aborted) {
-          throw new Error('Chat generation aborted by user.');
+      const targetUrl = `${this.baseUrl}/api/chat`;
+      const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Ollama chat failed (${response.status}): ${errText}`);
+      }
+
+      if (!response.body) {
+        throw new Error('No response body returned from Ollama');
+      }
+
+      let fullText = '';
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      const consumeParsed = (parsed: { error?: unknown; message?: { content?: string } }) => {
+        if (parsed.error) {
+          throw new OllamaStreamError(String(parsed.error));
         }
+        // Any stream frame means the runner is alive — stop the load timeout.
+        receivedOutput = true;
+        clearTimeout(loadTimer);
+        if (parsed.message?.content) {
+          const content = parsed.message.content;
+          fullText += content;
+          onChunk(content);
+        }
+      };
 
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          if (abortSignal?.aborted) {
+            throw new Error('Chat generation aborted by user.');
+          }
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          try {
-            const parsed = JSON.parse(trimmed);
-            if (parsed.message?.content) {
-              const content = parsed.message.content;
-              fullText += content;
-              onChunk(content);
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              consumeParsed(JSON.parse(trimmed));
+            } catch (err: unknown) {
+              if (err instanceof OllamaStreamError) {
+                throw err;
+              }
             }
-          } catch {
-            // Partial JSON ignored until next chunk
           }
         }
-      }
 
-      if (buffer.trim()) {
-        try {
-          const parsed = JSON.parse(buffer.trim());
-          if (parsed.message?.content) {
-            fullText += parsed.message.content;
-            onChunk(parsed.message.content);
+        if (buffer.trim()) {
+          try {
+            consumeParsed(JSON.parse(buffer.trim()));
+          } catch (err: unknown) {
+            if (err instanceof OllamaStreamError) {
+              throw err;
+            }
           }
-        } catch {}
-      }
-    } finally {
-      reader.releaseLock();
-    }
+        }
 
-    return fullText;
+        if (!fullText) {
+          throw new Error(
+            `Model '${model}' returned no output. It may still be loading, out of VRAM, or not installed. Try Free VRAM, then retry.`
+          );
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      return fullText;
+    } catch (err: unknown) {
+      if (timedOutWaitingForModel) {
+        throw new Error(
+          `Timed out loading '${model}'. Ollama never started the runner. End ollama.exe in Task Manager, start Ollama from the tray app, click Free VRAM, then retry.`
+        );
+      }
+      if (abortSignal?.aborted || (err instanceof Error && /aborted/i.test(err.message))) {
+        throw new Error('Chat generation aborted by user.');
+      }
+      throw err;
+    } finally {
+      clearTimeout(loadTimer);
+      clearInterval(statusTimer);
+      abortSignal?.removeEventListener('abort', onUserAbort);
+    }
   }
 
   /**
@@ -753,19 +845,19 @@ export class OllamaService {
    */
   public async checkMultipleModelUpdates(modelNames: string[]): Promise<ModelUpdateCheckResult[]> {
     const unique = [...new Set(modelNames.filter(Boolean))];
-    const results: ModelUpdateCheckResult[] = [];
-    for (const name of unique) {
-      try {
-        results.push(await this.checkModelUpdates(name));
-      } catch (err: any) {
-        results.push({
-          modelName: name,
-          hasUpdate: false,
-          message: `Failed to check '${name}': ${err?.message || err}`,
-        });
-      }
-    }
-    return results;
+    return Promise.all(
+      unique.map(async (name) => {
+        try {
+          return await this.checkModelUpdates(name);
+        } catch (err: any) {
+          return {
+            modelName: name,
+            hasUpdate: false,
+            message: `Failed to check '${name}': ${err?.message || err}`,
+          };
+        }
+      })
+    );
   }
 
   private async fetchWithTimeout(

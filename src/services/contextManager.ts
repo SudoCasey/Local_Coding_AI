@@ -5,6 +5,7 @@ export class ContextManager {
   private messages: ChatMessage[] = [];
   private baseSystemPrompt: string;
   private systemPrompt: string = '';
+  private systemPromptTokens = 0;
   private ollamaService: OllamaService;
   private workspaceRoot?: string;
 
@@ -44,6 +45,7 @@ You write clean, secure, idiomatic, and high-performance code across all web dev
 Operate strictly within the active project directory. Do not attempt to access or suggest files outside the opened workspace root. Attempt to complete all prompts within the directory.`;
 
     this.systemPrompt = `${this.baseSystemPrompt}${boundary}`;
+    this.systemPromptTokens = this.estimateTokens(this.systemPrompt);
   }
 
   public getMessages(): ChatMessage[] {
@@ -56,6 +58,7 @@ Operate strictly within the active project directory. Do not attempt to access o
 
   public setSystemPrompt(prompt: string): void {
     this.systemPrompt = prompt;
+    this.systemPromptTokens = this.estimateTokens(prompt);
   }
 
   public getSystemPrompt(): string {
@@ -104,7 +107,7 @@ Operate strictly within the active project directory. Do not attempt to access o
    * Total tokens in current conversation including the system prompt
    */
   public getTotalTokens(): number {
-    let tokens = this.estimateTokens(this.systemPrompt);
+    let tokens = this.systemPromptTokens;
     for (const msg of this.messages) {
       tokens += msg.tokens || this.estimateTokens(msg.content);
     }

@@ -14,6 +14,7 @@ interface Attachment {
 let isGenerating = false;
 let currentAssistantMessageEl: HTMLElement | null = null;
 let currentAssistantText = '';
+let markdownRenderTimer: number | null = null;
 const attachments: Attachment[] = [];
 
 // DOM Elements
@@ -453,6 +454,30 @@ function scrollToBottom(): void {
   chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
+function flushMarkdownRender(): void {
+  if (markdownRenderTimer !== null) {
+    window.clearTimeout(markdownRenderTimer);
+    markdownRenderTimer = null;
+  }
+  if (currentAssistantMessageEl) {
+    const body = currentAssistantMessageEl.querySelector('.message-body');
+    if (body) {
+      body.innerHTML = renderMarkdown(currentAssistantText);
+    }
+  }
+  scrollToBottom();
+}
+
+function scheduleMarkdownRender(): void {
+  if (markdownRenderTimer !== null) {
+    return;
+  }
+  markdownRenderTimer = window.setTimeout(() => {
+    markdownRenderTimer = null;
+    flushMarkdownRender();
+  }, 50);
+}
+
 function renderAttachments(): void {
   attachmentChipsContainer.innerHTML = '';
   attachments.forEach((att, idx) => {
@@ -478,31 +503,45 @@ function formatBytes(bytes: number): string {
   return `${Math.round(mb)} MB`;
 }
 
-// Markdown parser rendering HTML with interactive code blocks
+function utf8ToBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function base64ToUtf8(b64: string): string {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+// Markdown parser rendering HTML with interactive code blocks.
+// Plain text is escaped before tags are added so model output cannot inject HTML.
 function renderMarkdown(md: string): string {
   if (!md) return '';
 
-  // Process code blocks first: ```lang ... ```
   const codeBlocks: string[] = [];
   let processed = md.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_match, lang, code) => {
     const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
     codeBlocks.push(renderCodeBlock(lang || 'code', code));
-    return placeholder;
+    return `\n${placeholder}\n`;
   });
 
-  // Headers
+  processed = escapeHtml(processed);
+
   processed = processed.replace(/^### (.*$)/gim, '<h4>$1</h4>');
   processed = processed.replace(/^## (.*$)/gim, '<h3>$1</h3>');
   processed = processed.replace(/^# (.*$)/gim, '<h2>$1</h2>');
-
-  // Bold & Italics
   processed = processed.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   processed = processed.replace(/\*(.*?)\*/g, '<em>$1</em>');
-
-  // Inline Code
   processed = processed.replace(/`([^`]+)`/g, '<code>$1</code>');
 
-  // Line breaks & Paragraphs
   const lines = processed.split('\n');
   const renderedLines: string[] = [];
   let inList = false;
@@ -534,8 +573,6 @@ function renderMarkdown(md: string): string {
   }
 
   let finalHtml = renderedLines.join('\n');
-
-  // Restore code blocks
   codeBlocks.forEach((blockHtml, idx) => {
     finalHtml = finalHtml.replace(`__CODE_BLOCK_${idx}__`, blockHtml);
   });
@@ -545,7 +582,7 @@ function renderMarkdown(md: string): string {
 
 function renderCodeBlock(lang: string, code: string): string {
   const escapedCode = escapeHtml(code.trimEnd());
-  const rawBase64 = btoa(unescape(encodeURIComponent(code)));
+  const rawBase64 = utf8ToBase64(code);
 
   return `
     <div class="code-block-container">
@@ -574,22 +611,27 @@ function escapeHtml(text: string): string {
 // Global click handler for code action buttons
 document.addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
-  if (target.classList.contains('code-btn')) {
-    const action = target.dataset.action;
-    const base64Code = target.dataset.code;
-    if (!base64Code) return;
-    const code = decodeURIComponent(escape(atob(base64Code)));
+  const btn = target.closest('.code-block-container .code-btn') as HTMLElement | null;
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const base64Code = btn.dataset.code;
+  if (!base64Code) return;
+  let code = '';
+  try {
+    code = base64ToUtf8(base64Code);
+  } catch {
+    return;
+  }
 
-    if (action === 'copy') {
-      vscode.postMessage({ type: 'copyCode', payload: { code } });
-      const orig = target.textContent;
-      target.textContent = 'Copied!';
-      setTimeout(() => (target.textContent = orig), 1500);
-    } else if (action === 'insert') {
-      vscode.postMessage({ type: 'insertCodeAtCursor', payload: { code } });
-    } else if (action === 'apply') {
-      vscode.postMessage({ type: 'applyCodeToEditor', payload: { code } });
-    }
+  if (action === 'copy') {
+    vscode.postMessage({ type: 'copyCode', payload: { code } });
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => (btn.textContent = orig), 1500);
+  } else if (action === 'insert') {
+    vscode.postMessage({ type: 'insertCodeAtCursor', payload: { code } });
+  } else if (action === 'apply') {
+    vscode.postMessage({ type: 'applyCodeToEditor', payload: { code } });
   }
 });
 
@@ -889,29 +931,41 @@ window.addEventListener('message', (event) => {
 
     case 'chunk': {
       if (message.payload.isStart) {
+        if (!currentAssistantMessageEl) {
+          currentAssistantText = '';
+          currentAssistantMessageEl = createAssistantMessageElement();
+          chatContainer.appendChild(currentAssistantMessageEl);
+        }
         if (currentAssistantMessageEl) {
           const modelTag = currentAssistantMessageEl.querySelector('#active-model-tag');
           if (modelTag) {
-            modelTag.textContent = message.payload.modelUsed;
+            modelTag.textContent = message.payload.modelUsed || 'Thinking...';
             modelTag.setAttribute('title', message.payload.routingReason || '');
           }
+          const body = currentAssistantMessageEl.querySelector('.message-body');
+          if (body && !currentAssistantText) {
+            const modelName = escapeHtml(message.payload.modelUsed || 'model');
+            body.innerHTML = `<em>Loading ${modelName} into VRAM…</em>`;
+          }
+        }
+      }
+
+      if (message.payload.status && currentAssistantMessageEl && !currentAssistantText) {
+        const body = currentAssistantMessageEl.querySelector('.message-body');
+        if (body) {
+          body.innerHTML = `<em>${escapeHtml(message.payload.status)}</em>`;
         }
       }
 
       if (message.payload.chunk) {
         currentAssistantText += message.payload.chunk;
-        if (currentAssistantMessageEl) {
-          const body = currentAssistantMessageEl.querySelector('.message-body');
-          if (body) {
-            body.innerHTML = renderMarkdown(currentAssistantText);
-          }
-        }
-        scrollToBottom();
+        scheduleMarkdownRender();
       }
       break;
     }
 
     case 'complete': {
+      flushMarkdownRender();
       setGeneratingState(false);
       currentAssistantMessageEl = null;
       scrollToBottom();
@@ -919,6 +973,7 @@ window.addEventListener('message', (event) => {
     }
 
     case 'error': {
+      flushMarkdownRender();
       setGeneratingState(false);
       const errDiv = document.createElement('div');
       errDiv.className = 'message';

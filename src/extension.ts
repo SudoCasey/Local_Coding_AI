@@ -2,8 +2,16 @@ import * as vscode from 'vscode';
 import { ContextManager } from './services/contextManager';
 import { ModelRouter } from './services/modelRouter';
 import { OllamaService } from './services/ollamaService';
+import {
+  DEFAULT_OLLAMA_URL,
+  isLoopbackOllamaUrl,
+  normalizeOllamaUrl,
+} from './services/ollamaUrlPolicy';
 import { WorkspaceService } from './services/workspaceService';
 import { SidebarProvider } from './sidebar/SidebarProvider';
+
+const ALLOWED_REMOTE_URLS_KEY = 'allowedRemoteOllamaUrls';
+const deniedRemoteUrlsThisSession = new Set<string>();
 
 let statusBarItem: vscode.StatusBarItem;
 let statusInterval: NodeJS.Timeout | undefined;
@@ -11,10 +19,48 @@ let sidebarProvider: SidebarProvider | undefined;
 let ollamaService: OllamaService | undefined;
 let isDeactivating = false;
 
+async function resolveTrustedOllamaUrl(
+  requested: string,
+  extContext: vscode.ExtensionContext
+): Promise<string> {
+  const normalized = normalizeOllamaUrl(requested || DEFAULT_OLLAMA_URL);
+  if (isLoopbackOllamaUrl(normalized)) {
+    return normalized;
+  }
+
+  const allowed = extContext.globalState.get<string[]>(ALLOWED_REMOTE_URLS_KEY) || [];
+  if (allowed.includes(normalized)) {
+    return normalized;
+  }
+  if (deniedRemoteUrlsThisSession.has(normalized)) {
+    return DEFAULT_OLLAMA_URL;
+  }
+
+  const inspect = vscode.workspace.getConfiguration('localCodingAI').inspect<string>('ollamaUrl');
+  const fromWorkspace =
+    inspect?.workspaceValue !== undefined || inspect?.workspaceFolderValue !== undefined;
+  const source = fromWorkspace ? 'This workspace' : 'Your settings';
+
+  const choice = await vscode.window.showWarningMessage(
+    `${source} wants to use a non-local Ollama server at ${normalized}. Chat messages and attached files will be sent to that host.`,
+    { modal: true },
+    'Allow this URL',
+    'Use localhost'
+  );
+
+  if (choice === 'Allow this URL') {
+    await extContext.globalState.update(ALLOWED_REMOTE_URLS_KEY, [...allowed, normalized]);
+    return normalized;
+  }
+
+  vscode.window.showInformationMessage(`Using ${DEFAULT_OLLAMA_URL} instead of ${normalized}.`);
+  deniedRemoteUrlsThisSession.add(normalized);
+  return DEFAULT_OLLAMA_URL;
+}
+
 export function activate(context: vscode.ExtensionContext) {
   isDeactivating = false;
   const config = vscode.workspace.getConfiguration('localCodingAI');
-  const ollamaUrl = config.get<string>('ollamaUrl') || 'http://127.0.0.1:11434';
   const primaryModel = config.get<string>('primaryModel') || 'qwen2.5-coder:7b';
   const fastModel = config.get<string>('fastModel') || 'qwen2.5-coder:1.5b';
   const heavyModel = config.get<string>('heavyModel') || 'qwen2.5-coder:14b';
@@ -23,7 +69,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Initialize core services
   const workspaceService = new WorkspaceService();
   const workspaceRoot = workspaceService.getWorkspaceRoot();
-  ollamaService = new OllamaService(ollamaUrl);
+  ollamaService = new OllamaService(DEFAULT_OLLAMA_URL);
   const contextManager = new ContextManager(ollamaService, workspaceRoot);
   const modelRouter = new ModelRouter({
     mode: autoRouting ? 'auto' : 'manual',
@@ -32,6 +78,12 @@ export function activate(context: vscode.ExtensionContext) {
     fastModel,
     heavyModel,
   });
+
+  void resolveTrustedOllamaUrl(config.get<string>('ollamaUrl') || DEFAULT_OLLAMA_URL, context).then(
+    (trusted) => {
+      ollamaService?.setBaseUrl(trusted);
+    }
+  );
 
   // Keep context manager updated if workspace folders change
   context.subscriptions.push(
@@ -73,12 +125,12 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(statusBarItem);
 
   // Setup periodic status bar updates
-  const updateStatusBar = async () => {
+  const updateStatusBar = async (statusOverride?: Awaited<ReturnType<OllamaService['getHardwareStatus']>>) => {
     if (isDeactivating || !ollamaService) {
       return;
     }
     try {
-      const status = await ollamaService.getHardwareStatus();
+      const status = statusOverride ?? (await ollamaService.getHardwareStatus());
       if (status.isConnected) {
         const vramMb = Math.round(status.totalVramBytes / (1024 * 1024));
         const vramText = vramMb > 1024 ? `${(vramMb / 1024).toFixed(1)}GB` : `${vramMb}MB`;
@@ -98,8 +150,29 @@ export function activate(context: vscode.ExtensionContext) {
     }
   };
 
-  updateStatusBar();
-  statusInterval = setInterval(updateStatusBar, 10000);
+  const pollHardware = async () => {
+    if (isDeactivating || !ollamaService) {
+      return;
+    }
+    if (!sidebarProvider?.hasVisibleView()) {
+      return;
+    }
+    try {
+      const status = await ollamaService.getHardwareStatus();
+      await updateStatusBar(status);
+      if (sidebarProvider?.hasVisibleView()) {
+        await sidebarProvider.sendHardwareStatus(status);
+      }
+    } catch {
+      await updateStatusBar();
+    }
+  };
+
+  // Do not probe Ollama during activate — a startup /api/ps hit makes
+  // Ollama spawn console runners (CMD flash) as VS Code is opening.
+  statusInterval = setInterval(() => {
+    void pollHardware();
+  }, 8000);
 
   // Ensure timers / provider resources are freed with the extension host lifecycle
   context.subscriptions.push({
@@ -124,8 +197,11 @@ export function activate(context: vscode.ExtensionContext) {
       }
       if (e.affectsConfiguration('localCodingAI')) {
         const newConfig = vscode.workspace.getConfiguration('localCodingAI');
-        const newUrl = newConfig.get<string>('ollamaUrl') || 'http://127.0.0.1:11434';
-        ollamaService.setBaseUrl(newUrl);
+        const trustedUrl = await resolveTrustedOllamaUrl(
+          newConfig.get<string>('ollamaUrl') || DEFAULT_OLLAMA_URL,
+          context
+        );
+        ollamaService.setBaseUrl(trustedUrl);
 
         modelRouter.updateConfig({
           primaryModel: newConfig.get<string>('primaryModel') || 'qwen2.5-coder:7b',
@@ -138,7 +214,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         sidebarProvider.refreshModelsAndStatus();
-        updateStatusBar();
+        await pollHardware();
       }
     })
   );

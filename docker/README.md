@@ -19,6 +19,8 @@ This guide explains how to run the local inference engine using Docker with full
 
 ## 2. Quick Start (Running Ollama via Docker)
 
+The host port is bound to **127.0.0.1** so Ollama is not reachable from other machines on the LAN. Inside the container the API still listens on all interfaces; only the published mapping is loopback.
+
 Navigate to the `docker/` folder and launch the stack:
 
 ```bash

@@ -70,22 +70,17 @@ jobs:
           body: |
             ## Local Coding AI ${{ steps.meta.outputs.version }}
 
-            ### Install
+            ### Download
 
-            1. Download **`${{ steps.meta.outputs.asset }}`** from the assets below.
-            2. Run:
+            **[⬇️ ${{ steps.meta.outputs.asset }}](https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/${{ steps.meta.outputs.asset }})**
+
+            ### Install
 
             ```powershell
             code --install-extension ${{ steps.meta.outputs.asset }}
             ```
 
             Or in VS Code: **Extensions** → **Install from VSIX…**
-
-            ### Requirements
-
-            - VS Code `^1.85.0`
-            - [Ollama](https://ollama.com) running locally
-            - Recommended models: `qwen2.5-coder:7b`, `qwen2.5-coder:1.5b` (optional: `qwen2.5-coder:14b`)
           files: ${{ steps.meta.outputs.asset }}
           fail_on_unmatched_files: true
           generate_release_notes: true

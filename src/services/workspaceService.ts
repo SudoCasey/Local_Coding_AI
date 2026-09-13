@@ -30,27 +30,49 @@ export class WorkspaceService {
   }
 
   /**
-   * Verifies whether a given filesystem path is strictly located within the opened workspace directory
+   * Verifies whether a given filesystem path is strictly located within the opened workspace directory.
+   * Fails closed when no workspace folder is open.
    */
   public isPathWithinWorkspace(targetPath: string): boolean {
     const root = this.getWorkspaceRoot();
-    if (!root) {
-      // If no directory or workspace folder is opened, allow active file operations
-      return true;
+    if (!root || !targetPath) {
+      return false;
     }
     const resolvedRoot = path.resolve(root).toLowerCase();
     const resolvedTarget = path.resolve(targetPath).toLowerCase();
 
-    // Check exact match or subpath
     if (resolvedRoot === resolvedTarget) return true;
     const relative = path.relative(resolvedRoot, resolvedTarget);
     return !relative.startsWith('..') && !path.isAbsolute(relative);
   }
 
+  private requireInWorkspaceEditor(action: string): vscode.TextEditor | undefined {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      vscode.window.showWarningMessage(`No active editor open to ${action}.`);
+      return undefined;
+    }
+    const root = this.getWorkspaceRoot();
+    if (!root) {
+      vscode.window.showErrorMessage(
+        `Cannot ${action}: open a workspace folder first. File access is blocked until a folder is open.`
+      );
+      return undefined;
+    }
+    if (editor.document.uri.fsPath && !this.isPathWithinWorkspace(editor.document.uri.fsPath)) {
+      vscode.window.showErrorMessage(
+        `Cannot ${action}: active file is outside the opened workspace directory ("${root}").`
+      );
+      return undefined;
+    }
+    return editor;
+  }
+
   /**
-   * Retrieves context from the active text editor in VS Code, strictly enforcing workspace boundary
+   * Retrieves context from the active text editor, strictly enforcing workspace boundary.
    */
-  public getActiveEditorContext(): ActiveEditorContext | null {
+  public getActiveEditorContext(options?: { includeFullContent?: boolean }): ActiveEditorContext | null {
+    const includeFullContent = options?.includeFullContent !== false;
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
       return null;
@@ -59,10 +81,16 @@ export class WorkspaceService {
     const document = editor.document;
     const filePath = document.uri.fsPath;
     const fileName = path.basename(filePath);
-
-    // Enforce that active file is inside the opened workspace directory
     const root = this.getWorkspaceRoot();
-    if (root && filePath && !this.isPathWithinWorkspace(filePath)) {
+
+    if (!root) {
+      vscode.window.showWarningMessage(
+        'Open a workspace folder to attach or edit files. Access is blocked until a folder is open.'
+      );
+      return null;
+    }
+
+    if (filePath && !this.isPathWithinWorkspace(filePath)) {
       vscode.window.showWarningMessage(
         `File "${fileName}" is outside the opened workspace directory ("${root}"). Access blocked by workspace boundary.`
       );
@@ -71,8 +99,7 @@ export class WorkspaceService {
 
     const selection = editor.selection;
     const selectedText = document.getText(selection);
-    const fullContent = document.getText();
-    const relativePath = root ? path.relative(root, filePath) : vscode.workspace.asRelativePath(document.uri);
+    const relativePath = path.relative(root, filePath);
 
     return {
       filePath,
@@ -80,7 +107,7 @@ export class WorkspaceService {
       relativePath,
       languageId: document.languageId,
       selectedText: selectedText.length > 0 ? selectedText : undefined,
-      fullContent,
+      fullContent: includeFullContent ? document.getText() : undefined,
       cursorLine: selection.active.line + 1,
       totalLines: document.lineCount,
     };
@@ -90,15 +117,8 @@ export class WorkspaceService {
    * Insert code at cursor position in active editor (guarded by workspace boundary)
    */
   public async insertAtCursor(code: string): Promise<boolean> {
-    const editor = vscode.window.activeTextEditor;
+    const editor = this.requireInWorkspaceEditor('insert code');
     if (!editor) {
-      vscode.window.showWarningMessage('No active editor open to insert code.');
-      return false;
-    }
-
-    const root = this.getWorkspaceRoot();
-    if (root && editor.document.uri.fsPath && !this.isPathWithinWorkspace(editor.document.uri.fsPath)) {
-      vscode.window.showErrorMessage('Cannot insert code: Active file is outside the opened workspace directory.');
       return false;
     }
 
@@ -111,15 +131,8 @@ export class WorkspaceService {
    * Replace current selection in active editor (guarded by workspace boundary)
    */
   public async replaceSelection(code: string): Promise<boolean> {
-    const editor = vscode.window.activeTextEditor;
+    const editor = this.requireInWorkspaceEditor('modify code');
     if (!editor) {
-      vscode.window.showWarningMessage('No active editor open to replace selection.');
-      return false;
-    }
-
-    const root = this.getWorkspaceRoot();
-    if (root && editor.document.uri.fsPath && !this.isPathWithinWorkspace(editor.document.uri.fsPath)) {
-      vscode.window.showErrorMessage('Cannot modify code: Active file is outside the opened workspace directory.');
       return false;
     }
 
@@ -138,23 +151,14 @@ export class WorkspaceService {
    * Apply code to active file with full replacement (guarded by workspace boundary)
    */
   public async applyCodeToActiveFile(newCode: string): Promise<boolean> {
-    const editor = vscode.window.activeTextEditor;
+    const editor = this.requireInWorkspaceEditor('apply code');
     if (!editor) {
-      vscode.window.showWarningMessage('No active editor open to apply code.');
-      return false;
-    }
-
-    const root = this.getWorkspaceRoot();
-    if (root && editor.document.uri.fsPath && !this.isPathWithinWorkspace(editor.document.uri.fsPath)) {
-      vscode.window.showErrorMessage('Cannot apply code: Active file is outside the opened workspace directory.');
       return false;
     }
 
     const doc = editor.document;
-    const fullRange = new vscode.Range(
-      doc.positionAt(0),
-      doc.positionAt(doc.getText().length)
-    );
+    const lastLine = Math.max(doc.lineCount - 1, 0);
+    const fullRange = new vscode.Range(0, 0, lastLine, doc.lineAt(lastLine).text.length);
 
     return editor.edit((editBuilder) => {
       editBuilder.replace(fullRange, newCode);
@@ -165,15 +169,8 @@ export class WorkspaceService {
    * Show a side-by-side diff in VS Code comparing original file with proposed code
    */
   public async showDiffPreview(newCode: string, title: string = 'Proposed Code'): Promise<void> {
-    const editor = vscode.window.activeTextEditor;
+    const editor = this.requireInWorkspaceEditor('show diff');
     if (!editor) {
-      vscode.window.showWarningMessage('No active editor open for diff preview.');
-      return;
-    }
-
-    const root = this.getWorkspaceRoot();
-    if (root && editor.document.uri.fsPath && !this.isPathWithinWorkspace(editor.document.uri.fsPath)) {
-      vscode.window.showErrorMessage('Cannot show diff: Active file is outside the opened workspace directory.');
       return;
     }
 

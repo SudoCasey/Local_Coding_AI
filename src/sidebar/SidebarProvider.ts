@@ -6,9 +6,11 @@ import { WorkspaceService } from '../services/workspaceService';
 import {
   ChatMessage,
   ExtensionToWebviewMessage,
+  HardwareStatus,
   ModelPullProgress,
   WebviewToExtensionMessage,
 } from '../types';
+import { clampContextWindow } from '../services/ollamaUrlPolicy';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'localCodingAI.chatView';
@@ -21,8 +23,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private modelRouter: ModelRouter;
   private workspaceService: WorkspaceService;
   private abortController?: AbortController;
-  private statusInterval?: NodeJS.Timeout;
   private activePulls: Map<string, AbortController> = new Map();
+  private refreshTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -58,32 +60,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       }
     );
 
-    // Send initial models and hardware status
-    this.refreshModelsAndStatus();
-
-    // Start periodic status check (every 8 seconds)
-    if (!this.statusInterval) {
-      this.statusInterval = setInterval(() => {
-        if (Array.from(this._views).some((v) => v.visible)) {
-          this.sendHardwareStatus();
-        }
-      }, 8000);
-    }
-
+    // One deferred refresh when the view is shown — probing Ollama during
+    // activate/resolve makes llama-server allocate console windows on Windows.
     const visibilitySub = webviewView.onDidChangeVisibility(() => {
       if (webviewView.visible) {
-        this.refreshModelsAndStatus();
+        this.scheduleRefreshModelsAndStatus();
       }
     });
+
+    if (webviewView.visible) {
+      this.scheduleRefreshModelsAndStatus();
+    }
 
     webviewView.onDidDispose(() => {
       messageSub.dispose();
       visibilitySub.dispose();
       this._views.delete(webviewView);
-      if (this._views.size === 0 && this.statusInterval) {
-        clearInterval(this.statusInterval);
-        this.statusInterval = undefined;
-      }
     });
   }
 
@@ -91,11 +83,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
    * Synchronously release timers, abort in-flight work, and drop held state.
    */
   public dispose(): void {
-    if (this.statusInterval) {
-      clearInterval(this.statusInterval);
-      this.statusInterval = undefined;
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = undefined;
     }
-
     this.handleStopGeneration();
 
     for (const ctrl of this.activePulls.values()) {
@@ -132,6 +123,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  public scheduleRefreshModelsAndStatus(delayMs = 500): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+    }
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = undefined;
+      void this.refreshModelsAndStatus();
+    }, delayMs);
+  }
+
   public async refreshModelsAndStatus(): Promise<void> {
     try {
       const models = await this.ollamaService.listLocalModels();
@@ -156,10 +157,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           autoConfig,
         },
       });
-      this.postMessage({
-        type: 'autoConfig',
-        payload: autoConfig,
-      });
       await this.sendHardwareStatus();
     } catch {
       this.postMessage({
@@ -172,17 +169,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  public async sendHardwareStatus(): Promise<void> {
+  public hasVisibleView(): boolean {
+    return Array.from(this._views).some((v) => v.visible);
+  }
+
+  public async sendHardwareStatus(status?: HardwareStatus): Promise<void> {
     try {
-      const status = await this.ollamaService.getHardwareStatus();
+      const hw = status ?? (await this.ollamaService.getHardwareStatus());
       const currentTokens = this.contextManager.getTotalTokens();
       const config = vscode.workspace.getConfiguration('localCodingAI');
-      const maxContext = config.get<number>('contextWindow') || 16384;
+      const maxContext = clampContextWindow(config.get<number>('contextWindow') || 16384);
 
       this.postMessage({
         type: 'statusUpdate',
         payload: {
-          ...status,
+          ...hw,
           currentTokens,
           maxContext,
           tokenRatio: Math.min(1, currentTokens / maxContext),
@@ -259,8 +260,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         break;
 
       case 'setContextLimit': {
-        const newLimit = Number(message.payload?.contextWindow);
-        if (newLimit && newLimit >= 512) {
+        const newLimit = clampContextWindow(Number(message.payload?.contextWindow), 0);
+        if (newLimit >= 512) {
           await vscode.workspace
             .getConfiguration('localCodingAI')
             .update('contextWindow', newLimit, vscode.ConfigurationTarget.Global);
@@ -285,13 +286,29 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         await this.handleCheckModelUpdates(message.payload.modelName);
         break;
 
-      case 'applyCodeToEditor':
-        await this.workspaceService.applyCodeToActiveFile(message.payload.code);
-        vscode.window.showInformationMessage('Code applied to active editor.');
+      case 'applyCodeToEditor': {
+        const code = String(message.payload?.code || '');
+        if (!code) {
+          break;
+        }
+        await this.workspaceService.showDiffPreview(code, 'Proposed Apply');
+        const confirm = await vscode.window.showInformationMessage(
+          'Apply this code to the active file? This replaces the entire file.',
+          { modal: true },
+          'Apply',
+          'Cancel'
+        );
+        if (confirm === 'Apply') {
+          const ok = await this.workspaceService.applyCodeToActiveFile(code);
+          if (ok) {
+            vscode.window.showInformationMessage('Code applied to active editor.');
+          }
+        }
         break;
+      }
 
       case 'insertCodeAtCursor':
-        await this.workspaceService.insertAtCursor(message.payload.code);
+        await this.workspaceService.insertAtCursor(String(message.payload?.code || ''));
         break;
 
       case 'copyCode':
@@ -300,7 +317,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         break;
 
       case 'attachActiveFile': {
-        const editorCtx = this.workspaceService.getActiveEditorContext();
+        const editorCtx = this.workspaceService.getActiveEditorContext({ includeFullContent: true });
         if (editorCtx && editorCtx.fullContent) {
           const content = `\`\`\`${editorCtx.languageId || ''} // ${editorCtx.relativePath || editorCtx.fileName}\n${editorCtx.fullContent}\n\`\`\``;
           this.postMessage({
@@ -318,7 +335,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       }
 
       case 'attachSelection': {
-        const editorCtx = this.workspaceService.getActiveEditorContext();
+        const editorCtx = this.workspaceService.getActiveEditorContext({ includeFullContent: false });
         if (editorCtx && editorCtx.selectedText) {
           const content = `\`\`\`${editorCtx.languageId || ''} // Selection from ${editorCtx.relativePath || editorCtx.fileName} (line ${editorCtx.cursorLine})\n${editorCtx.selectedText}\n\`\`\``;
           this.postMessage({
@@ -359,34 +376,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this.contextManager.addMessage(userMsg);
 
     const config = vscode.workspace.getConfiguration('localCodingAI');
-    const maxContext = config.get<number>('contextWindow') || 16384;
+    const maxContext = clampContextWindow(config.get<number>('contextWindow') || 16384);
     const compactionThreshold = config.get<number>('autoCompactionThreshold') || 0.75;
     const fastModel = config.get<string>('fastModel') || 'qwen2.5-coder:1.5b';
     const gpuLayers = config.get<number>('gpuLayers') ?? 99;
     const temperature = config.get<number>('temperature') ?? 0.2;
     const keepAlive = config.get<string>('keepAlive') || '10m';
 
-    // Check if auto-compaction is needed
-    if (this.contextManager.shouldCompact(maxContext, compactionThreshold)) {
-      this.postMessage({
-        type: 'chunk',
-        payload: {
-          chunk: '\n*[Notice: Context reached threshold. Compacting conversation history...]*\n\n',
-        },
-      });
-
-      try {
-        const compactionResult = await this.contextManager.compact(fastModel);
-        this.postMessage({
-          type: 'contextCompacted',
-          payload: compactionResult,
-        });
-      } catch (err: any) {
-        console.warn('Auto compaction error:', err);
-      }
-    }
-
-    // Route model
     const availableModels = await this.ollamaService.listLocalModels().catch(() => []);
     const recommendation = this.modelRouter.route(
       fullUserPrompt,
@@ -403,10 +399,29 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       },
     });
 
-    // Prepare abort controller
+    if (this.contextManager.shouldCompact(maxContext, compactionThreshold)) {
+      this.postMessage({
+        type: 'chunk',
+        payload: {
+          status: 'Compacting conversation history…',
+        },
+      });
+
+      try {
+        const compactionResult = await this.contextManager.compact(fastModel);
+        this.postMessage({
+          type: 'contextCompacted',
+          payload: compactionResult,
+        });
+      } catch (err: any) {
+        console.warn('Auto compaction error:', err);
+      }
+    }
+
     this.abortController = new AbortController();
 
     try {
+      await this.ollamaService.ensureModelSlot(recommendation.modelName);
       const messagesToSend = this.contextManager.prepareMessagesForInference();
 
       let assistantResponse = '';
@@ -426,7 +441,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             payload: { chunk },
           });
         },
-        this.abortController.signal
+        this.abortController.signal,
+        (status: string) => {
+          this.postMessage({
+            type: 'chunk',
+            payload: { status },
+          });
+        }
       );
 
       // Save complete assistant response
@@ -813,7 +834,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     });
 
     if (input) {
-      const num = Number(input);
+      const num = clampContextWindow(Number(input));
       await config.update('contextWindow', num, vscode.ConfigurationTarget.Global);
       vscode.window.showInformationMessage(
         `Context window limit updated to ${num.toLocaleString()} tokens.`

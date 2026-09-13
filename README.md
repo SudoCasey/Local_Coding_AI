@@ -2,13 +2,13 @@
 
 **Completely offline, private VS Code coding assistant** powered by [Ollama](https://ollama.com) and open-weight models. No cloud APIs. Your prompts, code, and weights stay on your machine.
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/SudoCasey/Local_Coding_AI/releases)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](https://github.com/SudoCasey/Local_Coding_AI/releases)
 [![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85.0-007ACC.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-see%20repo-lightgrey.svg)](#license)
 
 | | |
 | :--- | :--- |
-| **Latest install package** | [`local-coding-ai-0.1.0.vsix`](https://github.com/SudoCasey/Local_Coding_AI/releases/latest) |
+| **Latest install package** | [⬇️ local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix) |
 | **Releases** | [github.com/SudoCasey/Local_Coding_AI/releases](https://github.com/SudoCasey/Local_Coding_AI/releases) |
 | **Backend** | Ollama at `http://127.0.0.1:11434` |
 | **Default models** | Qwen 2.5 Coder `1.5b` / `7b` / `14b` |
@@ -17,29 +17,22 @@
 
 ## Releases
 
-Pre-built VS Code extension packages are published on the GitHub **Releases** page as:
+### Download & install
 
-```text
-local-coding-ai-X.X.X.vsix
-```
-
-### Download & install (recommended)
-
-1. Open **[Releases](https://github.com/SudoCasey/Local_Coding_AI/releases)**.
-2. Download the latest asset: **`local-coding-ai-X.X.X.vsix`** (for example `local-coding-ai-0.1.0.vsix`).
-3. Install into VS Code:
+**[⬇️ local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix)**
 
 ```powershell
-code --install-extension local-coding-ai-0.1.0.vsix
+code --install-extension local-coding-ai-0.1.1.vsix
 ```
 
-Or in VS Code: **Extensions** → `⋯` → **Install from VSIX…** → select the downloaded file.
+Or in VS Code: **Extensions** → `⋯` → **Install from VSIX…**
 
-| Version | VSIX asset | Notes |
+| Version | Download | Notes |
 | :--- | :--- | :--- |
-| **0.1.0** | [`local-coding-ai-0.1.0.vsix`](https://github.com/SudoCasey/Local_Coding_AI/releases/tag/v0.1.0) | Initial public release — Auto mode roles, context limits, silent Ollama launch, resource cleanup |
+| **0.1.1** | [local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix) | Windows Ollama tray launch, no CMD flash / 7B hang, security + efficiency hardening |
+| **0.1.0** | [local-coding-ai-0.1.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.0/local-coding-ai-0.1.0.vsix) | Initial public release — Auto mode roles, context limits, silent Ollama launch, resource cleanup |
 
-> Assets are attached on GitHub Releases (not committed to the repo). See [`releases/README.md`](./releases/README.md) for the asset naming convention and how maintainers publish a new build.
+See [`releases/README.md`](./releases/README.md) for naming and how maintainers publish a new build.
 
 ---
 
@@ -114,10 +107,10 @@ See [`docker/README.md`](./docker/README.md) for GPU passthrough details.
 
 ### From GitHub Releases (end users)
 
-See **[Releases](#releases)** above — download `local-coding-ai-X.X.X.vsix` and run:
+Download **[local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix)** and run:
 
 ```powershell
-code --install-extension .\local-coding-ai-X.X.X.vsix
+code --install-extension .\local-coding-ai-0.1.1.vsix
 ```
 
 ### From source (developers)
@@ -225,9 +218,9 @@ The **Ollama daemon** is left running if present (it may be shared with other to
 
 ## Privacy
 
-- Designed for local-only inference via Ollama.  
+- Designed for local-only inference via Ollama. Non-loopback `ollamaUrl` values require an explicit confirmation before prompts are sent.  
 - Model **update checks** optionally contact the public Ollama registry / library pages when you click Check Updates.  
-- Chat, workspace files, and generation stay on your machine for normal use.
+- Chat, workspace files, and generation stay on your machine for normal use. Open a workspace folder to attach or apply code — file tools fail closed otherwise.
 
 ---
 
@@ -240,6 +233,6 @@ See repository license information when published. Contributions and issues are 
 ## Links
 
 - **Releases (VSIX downloads):** https://github.com/SudoCasey/Local_Coding_AI/releases  
-- **Latest package:** https://github.com/SudoCasey/Local_Coding_AI/releases/latest  
+- **Latest package:** [local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix)  
 - **Ollama:** https://ollama.com  
 - **Qwen 2.5 Coder library:** https://ollama.com/library/qwen2.5-coder
