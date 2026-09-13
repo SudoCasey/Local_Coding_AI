@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.vsix
+!/local-coding-ai-*.vsix
 .DS_Store
 .vscode-test/
 npm-debug.log*

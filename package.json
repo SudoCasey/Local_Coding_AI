@@ -2,7 +2,7 @@
   "name": "local-coding-ai",
   "displayName": "Local Coding AI",
   "description": "Completely offline, local VS Code coding AI assistant powered by Ollama and open-weight models.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "local-coding-ai",
   "author": {
     "name": "Casey Friedrich",
@@ -291,7 +291,8 @@
     "compile": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node -e \"require('esbuild').buildSync({entryPoints:['test/verify.test.ts'],bundle:true,platform:'node',outfile:'dist/verify.js',external:['vscode']}); require('./dist/verify.js');\""
+    "test": "node -e \"require('esbuild').buildSync({entryPoints:['test/verify.test.ts'],bundle:true,platform:'node',outfile:'dist/verify.js',external:['vscode']}); require('./dist/verify.js');\"",
+    "package": "npx @vscode/vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

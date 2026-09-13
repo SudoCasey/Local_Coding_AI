@@ -56,6 +56,96 @@ function normalizeRelPath(p: string): string {
     .replace(/^\/+/, '');
 }
 
+const MARKDOWN_EXTS = new Set(['md', 'markdown', 'mdx']);
+
+function fileExtension(relPath: string): string {
+  const base = relPath.split(/[/\\]/).pop() || '';
+  const dot = base.lastIndexOf('.');
+  if (dot <= 0) {
+    return '';
+  }
+  return base.slice(dot + 1).toLowerCase();
+}
+
+function isFenceOpener(line: string): { lang: string } | null {
+  const m = line.trim().match(/^```([a-zA-Z0-9_+-]*)\s*$/);
+  return m ? { lang: (m[1] || '').toLowerCase() } : null;
+}
+
+function isFenceCloser(line: string): boolean {
+  return line.trim() === '```';
+}
+
+/**
+ * Models often wrap WRITE/REPLACE bodies in markdown fences (` ```css `,
+ * ` ```javascript `, …). Those fences are not valid source. Strip a wrapping
+ * fence when the whole payload is one code block.
+ *
+ * Markdown files keep an intentional inner fence (e.g. a README that is only a
+ * bash example) unless the outer fence is `markdown`/`md`.
+ */
+export function stripWrappingMarkdownFence(raw: string, relPath: string = ''): string {
+  let content = String(raw ?? '');
+  for (let i = 0; i < 3; i++) {
+    const next = unwrapOnce(content, relPath);
+    if (next === content) {
+      break;
+    }
+    content = next;
+  }
+  return content;
+}
+
+function unwrapOnce(content: string, relPath: string): string {
+  if (!content.includes('```')) {
+    return content;
+  }
+
+  const endedWithNewline = /\r?\n$/.test(content);
+  const lines = content.split('\n');
+  let start = 0;
+  while (start < lines.length && lines[start].trim() === '') {
+    start += 1;
+  }
+  if (start >= lines.length) {
+    return content;
+  }
+
+  const open = isFenceOpener(lines[start]);
+  if (!open) {
+    return content;
+  }
+
+  const ext = fileExtension(relPath);
+  const isMarkdownFile = MARKDOWN_EXTS.has(ext);
+  if (isMarkdownFile && open.lang && open.lang !== 'markdown' && open.lang !== 'md') {
+    return content;
+  }
+
+  let end = lines.length - 1;
+  while (end > start && lines[end].trim() === '') {
+    end -= 1;
+  }
+
+  let inner: string[];
+  if (end > start && isFenceCloser(lines[end])) {
+    inner = lines.slice(start + 1, end);
+  } else {
+    const rest = lines.slice(start + 1);
+    const hasOtherFence = rest.some((line) => isFenceOpener(line) || isFenceCloser(line));
+    if (hasOtherFence) {
+      return content;
+    }
+    inner = rest;
+  }
+
+  let unwrapped = inner.join('\n');
+  if (endedWithNewline && !/\r?\n$/.test(unwrapped)) {
+    unwrapped += '\n';
+  }
+  return unwrapped;
+}
+
 /**
  * Parse assistant output for agent tool/edit protocol blocks and produce
  * user-visible text with those blocks stripped.
@@ -87,8 +177,8 @@ export function parseAgentResponse(raw: string): ParsedAgentResponse {
       toolCalls.push({
         kind: 'search_replace',
         path,
-        search: String(search ?? ''),
-        replace: String(replace ?? ''),
+        search: stripWrappingMarkdownFence(String(search ?? ''), path),
+        replace: stripWrappingMarkdownFence(String(replace ?? ''), path),
       });
       statusLines.push(`Edited \`${path}\``);
     }
@@ -101,7 +191,7 @@ export function parseAgentResponse(raw: string): ParsedAgentResponse {
       toolCalls.push({
         kind: 'write',
         path,
-        content: String(content ?? '').replace(/^\n/, ''),
+        content: stripWrappingMarkdownFence(String(content ?? '').replace(/^\n/, ''), path),
       });
       statusLines.push(`Wrote \`${path}\``);
     }
@@ -135,7 +225,7 @@ export function formatToolResultsForModel(results: string[]): string {
   if (results.length === 0) {
     return '';
   }
-  return `[TOOL RESULTS]\n${results.join('\n\n')}\n\nContinue the task. Prefer SEARCH/REPLACE or WRITE to apply remaining file changes. Use RUN only if execution is required.`;
+  return `[TOOL RESULTS]\n${results.join('\n\n')}\n\nContinue the task. Prefer SEARCH/REPLACE or WRITE to apply remaining file changes. WRITE/REPLACE bodies must be raw file text with no markdown fences. Use RUN only if execution is required.`;
 }
 
 export const AGENT_PROTOCOL_INSTRUCTIONS = `
@@ -154,7 +244,7 @@ exact old text to find
 exact new text
 <<<END>>>
 <<<WRITE path="src/new-file.ts">>>
-full file contents
+export const x = 1;
 <<<END>>>
 <<<RUN>>>
 npm test
@@ -164,6 +254,8 @@ Rules:
 1. Prefer SEARCH/REPLACE for edits. Use WRITE for new files or full rewrites.
 2. READ files you need before editing. You may use multiple READ/LIST/SEARCH/WRITE blocks in one reply.
 3. Actually apply changes with SEARCH/REPLACE or WRITE — do not only recommend code in markdown when the user asked you to change the project.
-4. Use RUN only when a command must be executed. Never claim a command ran unless you emitted RUN.
-5. After tool results are returned, continue until the task is done or you need more tools.
+4. WRITE and REPLACE bodies are the raw file bytes only. Never wrap them in markdown fences such as \`\`\`css, \`\`\`javascript, \`\`\`html, \`\`\`ts, or a bare \`\`\`. Those fences are written into the file and make it invalid.
+5. Do not put language tags or markdown formatting inside the file unless that syntax is valid for that file type.
+6. Use RUN only when a command must be executed. Never claim a command ran unless you emitted RUN.
+7. After tool results are returned, continue until the task is done or you need more tools.
 `.trim();

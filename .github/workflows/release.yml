@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -78,3 +80,23 @@ jobs:
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit VSIX to repository root
+        shell: pwsh
+        env:
+          ASSET: ${{ steps.meta.outputs.asset }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          $tmp = Join-Path $env:RUNNER_TEMP $env:ASSET
+          Copy-Item $env:ASSET $tmp -Force
+          git fetch origin main
+          git checkout main
+          Copy-Item $tmp $env:ASSET -Force
+          git add -- $env:ASSET
+          if (git diff --cached --quiet -- $env:ASSET) {
+            Write-Host "Root VSIX already committed"
+            exit 0
+          }
+          git commit -m "Add $env:ASSET to repository root"
+          git push origin main

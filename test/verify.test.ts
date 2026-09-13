@@ -14,7 +14,7 @@ import {
   isWriteActionAllowlisted,
   normalizeWriteActionType,
 } from '../src/services/writePermissionPolicy';
-import { parseAgentResponse } from '../src/services/agentProtocol';
+import { parseAgentResponse, stripWrappingMarkdownFence } from '../src/services/agentProtocol';
 import { ChangeTracker } from '../src/services/changeTracker';
 import { OllamaModelInfo } from '../src/types';
 
@@ -211,6 +211,46 @@ Done.`);
   );
   assert(!parsed.displayText.includes('<<<READ'), 'Protocol markers stripped from display');
   assert(parsed.displayText.includes("I'll update the file."), 'Display keeps prose');
+
+  const fencedWrite = parseAgentResponse(`<<<WRITE path="src/app.css">>>
+\`\`\`css
+body { color: red; }
+\`\`\`
+<<<END>>>`);
+  assert(fencedWrite.toolCalls.length === 1 && fencedWrite.toolCalls[0].kind === 'write', 'Fenced WRITE parsed');
+  const cssBody = (fencedWrite.toolCalls[0] as any).content;
+  assert(cssBody.includes('body { color: red; }'), 'WRITE keeps CSS source');
+  assert(!cssBody.includes('```'), 'WRITE strips wrapping css fence');
+
+  const fencedJs = parseAgentResponse(`<<<WRITE path="src/app.js">>>
+\`\`\`javascript
+console.log(1);
+<<<END>>>`);
+  const jsBody = (fencedJs.toolCalls[0] as any).content;
+  assert(jsBody.trim() === 'console.log(1);', 'WRITE strips opening javascript fence without closer');
+  assert(!jsBody.includes('```'), 'Unclosed javascript fence not written to file');
+
+  const fencedHtmlReplace = parseAgentResponse(`<<<SEARCH path="index.html">>>
+<title>Old</title>
+<<<REPLACE>>>
+\`\`\`html
+<title>New</title>
+\`\`\`
+<<<END>>>`);
+  const htmlReplace = (fencedHtmlReplace.toolCalls[0] as any).replace;
+  assert(htmlReplace.trim() === '<title>New</title>', 'REPLACE strips wrapping html fence');
+
+  const rawWrite = parseAgentResponse(`<<<WRITE path="src/ok.ts">>>
+export const x = 1;
+<<<END>>>`);
+  assert((rawWrite.toolCalls[0] as any).content.includes('export const x = 1;'), 'Unfenced WRITE content unchanged');
+
+  const mdKeep = stripWrappingMarkdownFence('```bash\necho hi\n```\n', 'README.md');
+  assert(mdKeep.includes('```bash'), 'Markdown file keeps intentional bash fence');
+
+  const mdUnwrap = stripWrappingMarkdownFence('```markdown\n# Title\n```\n', 'README.md');
+  assert(mdUnwrap.includes('# Title'), 'Wrapped markdown document unwraps');
+  assert(!mdUnwrap.includes('```markdown'), 'Outer markdown fence stripped');
 
   console.log('\n--- Testing Change Tracker ---');
   const tracker = new ChangeTracker();

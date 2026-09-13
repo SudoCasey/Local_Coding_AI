@@ -4,6 +4,24 @@ All notable changes to **Local Coding AI** are documented here.
 Released builds are published as `local-coding-ai-X.X.X.vsix` on
 [GitHub Releases](https://github.com/SudoCasey/Local_Coding_AI/releases).
 
+## [0.3.1] — 2026-09-13
+
+### Summary
+
+File edits from the assistant stay valid source. Markdown fences such as
+` ```css `, ` ```javascript `, and ` ```html ` are no longer written into
+files. Packaged `.vsix` builds are kept in the repository root for local
+install during development.
+
+### Changes
+
+- Strip wrapping markdown code fences from WRITE and SEARCH/REPLACE bodies
+- Instruct the model to emit raw file contents (no language-tagged fences)
+- READ tool results no longer wrap file text in markdown fences
+- Keep the packaged `local-coding-ai-X.X.X.vsix` in the repository root
+
+**Download:** [local-coding-ai-0.3.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.1/local-coding-ai-0.3.1.vsix)
+
 ## [0.3.0] — 2026-09-13
 
 ### Summary

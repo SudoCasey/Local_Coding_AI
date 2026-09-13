@@ -114,7 +114,7 @@ export class AgentExecutor {
         if (!res.ok) {
           return `READ ${call.path} ERROR: ${res.error}`;
         }
-        return `READ ${res.path}:\n\`\`\`\n${res.content}\n\`\`\``;
+        return `READ ${res.path}:\n${res.content}`;
       }
       case 'list': {
         const res = await this.workspace.listWorkspaceDir(call.path);
