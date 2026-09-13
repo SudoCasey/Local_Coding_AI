@@ -1,0 +1,267 @@
+{
+  "name": "local-coding-ai",
+  "displayName": "Local Coding AI",
+  "description": "Completely offline, local VS Code coding AI assistant powered by Ollama and open-weight models.",
+  "version": "0.1.0",
+  "publisher": "local-coding-ai",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SudoCasey/Local_Coding_AI.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SudoCasey/Local_Coding_AI/issues"
+  },
+  "homepage": "https://github.com/SudoCasey/Local_Coding_AI#readme",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Machine Learning",
+    "Snippets"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "local-coding-ai-view-container",
+          "title": "Local Coding AI",
+          "icon": "resources/icon.svg"
+        }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "local-coding-ai-view-container-right",
+          "title": "Local Coding AI",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "local-coding-ai-view-container": [
+        {
+          "type": "webview",
+          "id": "localCodingAI.chatView",
+          "name": "Local Coding Assistant"
+        }
+      ],
+      "local-coding-ai-view-container-right": [
+        {
+          "type": "webview",
+          "id": "localCodingAI.chatViewRight",
+          "name": "Local Coding Assistant",
+          "when": "config.localCodingAI.sidebarPosition == 'right'"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "localCodingAI.openChat",
+        "title": "Open Chat",
+        "category": "Local Coding AI"
+      },
+      {
+        "command": "localCodingAI.launchOllama",
+        "title": "Launch Ollama (Local AI Engine)",
+        "category": "Local Coding AI",
+        "icon": "$(play)"
+      },
+      {
+        "command": "localCodingAI.clearContext",
+        "title": "Clear Chat Context",
+        "category": "Local Coding AI",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "localCodingAI.freeVram",
+        "title": "Free GPU VRAM (Unload Models)",
+        "category": "Local Coding AI",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "localCodingAI.freeRam",
+        "title": "Clean RAM / Caches",
+        "category": "Local Coding AI",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "localCodingAI.compactContext",
+        "title": "Compact Conversation Context",
+        "category": "Local Coding AI",
+        "icon": "$(fold)"
+      },
+      {
+        "command": "localCodingAI.setContextLimit",
+        "title": "Set Context Window Limit",
+        "category": "Local Coding AI",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "localCodingAI.checkModelUpdates",
+        "title": "Check for Model Updates",
+        "category": "Local Coding AI",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "localCodingAI.toggleSidebarPosition",
+        "title": "Toggle Sidebar Position (Left / Right)",
+        "category": "Local Coding AI",
+        "icon": "$(layout-sidebar-right)"
+      },
+      {
+        "command": "localCodingAI.explainCode",
+        "title": "Explain Selected Code",
+        "category": "Local Coding AI"
+      },
+      {
+        "command": "localCodingAI.refactorCode",
+        "title": "Refactor Selected Code",
+        "category": "Local Coding AI"
+      },
+      {
+        "command": "localCodingAI.generateTests",
+        "title": "Generate Tests for Selection",
+        "category": "Local Coding AI"
+      },
+      {
+        "command": "localCodingAI.fixCode",
+        "title": "Fix Issues in Selected Code",
+        "category": "Local Coding AI"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "localCodingAI.toggleSidebarPosition",
+          "when": "view == localCodingAI.chatView || view == localCodingAI.chatViewRight",
+          "group": "navigation@0"
+        },
+        {
+          "command": "localCodingAI.freeVram",
+          "when": "view == localCodingAI.chatView || view == localCodingAI.chatViewRight",
+          "group": "navigation@1"
+        },
+        {
+          "command": "localCodingAI.compactContext",
+          "when": "view == localCodingAI.chatView || view == localCodingAI.chatViewRight",
+          "group": "navigation@2"
+        },
+        {
+          "command": "localCodingAI.clearContext",
+          "when": "view == localCodingAI.chatView || view == localCodingAI.chatViewRight",
+          "group": "navigation@3"
+        },
+        {
+          "command": "localCodingAI.setContextLimit",
+          "when": "view == localCodingAI.chatView || view == localCodingAI.chatViewRight",
+          "group": "navigation@4"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "localCodingAI.explainCode",
+          "when": "editorHasSelection",
+          "group": "LocalCodingAI@1"
+        },
+        {
+          "command": "localCodingAI.refactorCode",
+          "when": "editorHasSelection",
+          "group": "LocalCodingAI@2"
+        },
+        {
+          "command": "localCodingAI.generateTests",
+          "when": "editorHasSelection",
+          "group": "LocalCodingAI@3"
+        },
+        {
+          "command": "localCodingAI.fixCode",
+          "when": "editorHasSelection",
+          "group": "LocalCodingAI@4"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Local Coding AI",
+      "properties": {
+        "localCodingAI.sidebarPosition": {
+          "type": "string",
+          "enum": ["left", "right"],
+          "enumDescriptions": [
+            "Display assistant in the Left sidebar (Primary Activity Bar)",
+            "Display assistant in the Right sidebar (Secondary Side Bar)"
+          ],
+          "default": "left",
+          "description": "Show the Local Coding AI sidebar on the left side (Primary Activity Bar) or right side (Secondary Side Bar)."
+        },
+        "localCodingAI.ollamaUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:11434",
+          "description": "URL of the local Ollama API server (native or Docker)."
+        },
+        "localCodingAI.primaryModel": {
+          "type": "string",
+          "default": "qwen2.5-coder:7b",
+          "description": "Primary Auto-mode coding model (default for most tasks). Configurable from the Auto Mode Models panel."
+        },
+        "localCodingAI.fastModel": {
+          "type": "string",
+          "default": "qwen2.5-coder:1.5b",
+          "description": "Fast Auto-mode model for quick Q&A/syntax queries, plus context compaction. Configurable from the Auto Mode Models panel."
+        },
+        "localCodingAI.heavyModel": {
+          "type": "string",
+          "default": "qwen2.5-coder:14b",
+          "description": "Heavy Auto-mode model for large architectural refactors. Configurable from the Auto Mode Models panel."
+        },
+        "localCodingAI.autoModelRouting": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically select the most suitable model based on prompt complexity and context size."
+        },
+        "localCodingAI.contextWindow": {
+          "type": "number",
+          "default": 16384,
+          "description": "Context window size (num_ctx in tokens) requested from Ollama."
+        },
+        "localCodingAI.autoCompactionThreshold": {
+          "type": "number",
+          "default": 0.75,
+          "description": "Ratio of context window (0.5 - 0.95) that triggers automatic conversation compaction."
+        },
+        "localCodingAI.gpuLayers": {
+          "type": "number",
+          "default": 99,
+          "description": "Number of layers to offload to GPU (99 for all layers on RTX 3080)."
+        },
+        "localCodingAI.temperature": {
+          "type": "number",
+          "default": 0.2,
+          "description": "Sampling temperature for model inference (lower is more deterministic for code)."
+        },
+        "localCodingAI.keepAlive": {
+          "type": "string",
+          "default": "10m",
+          "description": "Duration to keep model loaded in VRAM after request completes."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "node esbuild.js --production",
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node -e \"require('esbuild').buildSync({entryPoints:['test/verify.test.ts'],bundle:true,platform:'node',outfile:'dist/verify.js',external:['vscode']}); require('./dist/verify.js');\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.20.1",
+    "typescript": "^5.3.3"
+  }
+}

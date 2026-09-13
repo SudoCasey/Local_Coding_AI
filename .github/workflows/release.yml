@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to release (e.g. v0.1.0). Leave empty to use package.json version.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  package-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Package VSIX
+        run: npx @vscode/vsce package --no-dependencies
+
+      - name: Resolve version and asset name
+        id: meta
+        shell: pwsh
+        run: |
+          $pkg = Get-Content package.json | ConvertFrom-Json
+          $version = $pkg.version
+          $asset = "local-coding-ai-$version.vsix"
+          if (-not (Test-Path $asset)) {
+            throw "Expected VSIX not found: $asset"
+          }
+          $tag = "${{ github.event.inputs.tag }}"
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            if ($env:GITHUB_REF_TYPE -eq 'tag') {
+              $tag = $env:GITHUB_REF_NAME
+            } else {
+              $tag = "v$version"
+            }
+          }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "asset=$asset" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Publishing $asset as release $tag"
+
+      - name: Create GitHub Release with VSIX
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Local Coding AI ${{ steps.meta.outputs.version }}
+          body: |
+            ## Local Coding AI ${{ steps.meta.outputs.version }}
+
+            ### Install
+
+            1. Download **`${{ steps.meta.outputs.asset }}`** from the assets below.
+            2. Run:
+
+            ```powershell
+            code --install-extension ${{ steps.meta.outputs.asset }}
+            ```
+
+            Or in VS Code: **Extensions** → **Install from VSIX…**
+
+            ### Requirements
+
+            - VS Code `^1.85.0`
+            - [Ollama](https://ollama.com) running locally
+            - Recommended models: `qwen2.5-coder:7b`, `qwen2.5-coder:1.5b` (optional: `qwen2.5-coder:14b`)
+          files: ${{ steps.meta.outputs.asset }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
