@@ -4,6 +4,10 @@
   "description": "Completely offline, local VS Code coding AI assistant powered by Ollama and open-weight models.",
   "version": "0.2.0",
   "publisher": "local-coding-ai",
+  "author": {
+    "name": "Casey Friedrich",
+    "url": "https://cfriedrich.net"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/SudoCasey/Local_Coding_AI.git"
@@ -11,7 +15,7 @@
   "bugs": {
     "url": "https://github.com/SudoCasey/Local_Coding_AI/issues"
   },
-  "homepage": "https://github.com/SudoCasey/Local_Coding_AI#readme",
+  "homepage": "https://cfriedrich.net",
   "engines": {
     "vscode": "^1.85.0"
   },

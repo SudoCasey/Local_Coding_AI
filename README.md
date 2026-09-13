@@ -2,6 +2,8 @@
 
 **Completely offline, private VS Code coding assistant** powered by [Ollama](https://ollama.com) and open-weight models. No cloud APIs. Your prompts, code, and weights stay on your machine.
 
+**Author:** [Casey Friedrich](https://cfriedrich.net)
+
 [![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/SudoCasey/Local_Coding_AI/releases)
 [![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85.0-007ACC.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-see%20repo-lightgrey.svg)](#license)

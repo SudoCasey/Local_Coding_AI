@@ -22,6 +22,7 @@ or persistent Add to Allowlist.
 - Persist allowlisted types in `localCodingAI.writeAllowlist`
 - Sidebar **AI writes** control + manage-allowlist button / command
 - Apply shows a diff preview when approval is still required
+- Extension author metadata: **Casey Friedrich** ([cfriedrich.net](https://cfriedrich.net))
 
 **Download:** [local-coding-ai-0.2.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.2.0/local-coding-ai-0.2.0.vsix)
 
