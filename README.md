@@ -4,13 +4,13 @@
 
 **Author:** [Casey Friedrich](https://cfriedrich.net)
 
-[![Version](https://img.shields.io/badge/version-0.3.5-blue.svg)](https://github.com/SudoCasey/Local_Coding_AI/releases)
+[![Version](https://img.shields.io/badge/version-0.3.6-blue.svg)](https://github.com/SudoCasey/Local_Coding_AI/releases)
 [![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85.0-007ACC.svg)](https://code.visualstudio.com/)
 [![License](https://img.shields.io/badge/license-see%20repo-lightgrey.svg)](#license)
 
 | | |
 | :--- | :--- |
-| **Latest install package** | [⬇️ local-coding-ai-0.3.5.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.5/local-coding-ai-0.3.5.vsix) |
+| **Latest install package** | [⬇️ local-coding-ai-0.3.6.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.6/local-coding-ai-0.3.6.vsix) |
 | **Releases** | [github.com/SudoCasey/Local_Coding_AI/releases](https://github.com/SudoCasey/Local_Coding_AI/releases) |
 | **Backend** | Ollama at `http://127.0.0.1:11434` |
 | **Default models** | Qwen 2.5 Coder `1.5b` / `7b` / `14b` |
@@ -21,16 +21,17 @@
 
 ### Download & install
 
-**[⬇️ local-coding-ai-0.3.5.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.5/local-coding-ai-0.3.5.vsix)**
+**[⬇️ local-coding-ai-0.3.6.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.6/local-coding-ai-0.3.6.vsix)**
 
 ```powershell
-code --install-extension local-coding-ai-0.3.5.vsix
+code --install-extension local-coding-ai-0.3.6.vsix
 ```
 
 Or in VS Code: **Extensions** → `⋯` → **Install from VSIX…**
 
 | Version | Download | Summary |
 | :--- | :--- | :--- |
+| **0.3.6** | [local-coding-ai-0.3.6.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.6/local-coding-ai-0.3.6.vsix) | Unload the old model on swap; unwrap broken JSON replies |
 | **0.3.5** | [local-coding-ai-0.3.5.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.5/local-coding-ai-0.3.5.vsix) | Recover malformed tool tags so the assistant actually edits the repo |
 | **0.3.4** | [local-coding-ai-0.3.4.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.4/local-coding-ai-0.3.4.vsix) | Unload 1.5B before 7B; unwrap JSON replies; stable chat scroll |
 | **0.3.3** | [local-coding-ai-0.3.3.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.3/local-coding-ai-0.3.3.vsix) | Keep the chat model in VRAM between prompts |
@@ -40,6 +41,12 @@ Or in VS Code: **Extensions** → `⋯` → **Install from VSIX…**
 | **0.2.0** | [local-coding-ai-0.2.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.2.0/local-coding-ai-0.2.0.vsix) | Allowlist / Run everything modes for AI actions |
 | **0.1.1** | [local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix) | Fixes Windows Ollama hang/flash for larger models; security + efficiency hardening |
 | **0.1.0** | [local-coding-ai-0.1.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.0/local-coding-ai-0.1.0.vsix) | Initial public release — Auto mode, context limits, model pulls, resource cleanup |
+
+### 0.3.6
+
+Switching models unloads the previous runner from VRAM and loads the new one. Pretty-printed JSON replies with broken inner quotes are unwrapped instead of shown as chat.
+
+Full notes: [`releases/v0.3.6.md`](./releases/v0.3.6.md) · [`CHANGELOG.md`](./CHANGELOG.md)
 
 ### 0.3.5
 
@@ -172,10 +179,10 @@ See [`docker/README.md`](./docker/README.md) for GPU passthrough details.
 
 ### From GitHub Releases (end users)
 
-Download **[local-coding-ai-0.3.5.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.5/local-coding-ai-0.3.5.vsix)** and run:
+Download **[local-coding-ai-0.3.6.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.6/local-coding-ai-0.3.6.vsix)** and run:
 
 ```powershell
-code --install-extension .\local-coding-ai-0.3.5.vsix
+code --install-extension .\local-coding-ai-0.3.6.vsix
 ```
 
 ### From source (developers)
@@ -183,7 +190,7 @@ code --install-extension .\local-coding-ai-0.3.5.vsix
 The latest packaged build is kept in the repo root so you can install it without downloading from GitHub:
 
 ```powershell
-code --install-extension .\local-coding-ai-0.3.5.vsix
+code --install-extension .\local-coding-ai-0.3.6.vsix
 ```
 
 ```powershell
@@ -198,7 +205,7 @@ npm run compile
 
 ```powershell
 npm run package
-code --install-extension .\local-coding-ai-0.3.5.vsix
+code --install-extension .\local-coding-ai-0.3.6.vsix
 ```
 
 ---
@@ -310,6 +317,6 @@ See repository license information when published. Contributions and issues are 
 ## Links
 
 - **Releases (VSIX downloads):** https://github.com/SudoCasey/Local_Coding_AI/releases  
-- **Latest package:** [local-coding-ai-0.3.5.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.5/local-coding-ai-0.3.5.vsix)  
+- **Latest package:** [local-coding-ai-0.3.6.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.6/local-coding-ai-0.3.6.vsix)  
 - **Ollama:** https://ollama.com  
 - **Qwen 2.5 Coder library:** https://ollama.com/library/qwen2.5-coder

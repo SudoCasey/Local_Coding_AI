@@ -269,6 +269,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             mode: this.modelRouter.getMode(),
           },
         });
+        await this.handleModelSwap(message.payload.model);
         break;
 
       case 'setAutoModelRole':
@@ -612,6 +613,44 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       this.abortController.abort();
       this.abortController = undefined;
     }
+  }
+
+  /**
+   * Unload whatever is in VRAM and load the newly selected model.
+   * Auto mode waits until the next prompt to pick a runner.
+   */
+  public async handleModelSwap(selected?: string): Promise<void> {
+    const target = String(selected || '').trim();
+    if (!target || target === 'auto') {
+      return;
+    }
+
+    this.handleStopGeneration();
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Switching to ${target}…`,
+        cancellable: false,
+      },
+      async (progress) => {
+        const onStatus = (status: string) => {
+          progress.report({ message: status });
+        };
+        try {
+          const slot = await this.ollamaService.ensureModelSlot(target, onStatus);
+          if (!slot.alreadyLoaded) {
+            await this.ollamaService.preloadModel(target, onStatus);
+          }
+        } catch (err: any) {
+          vscode.window.showWarningMessage(
+            err?.message || `Could not switch to ${target}. Try Free VRAM, then retry.`
+          );
+        }
+      }
+    );
+
+    await this.sendHardwareStatus();
   }
 
   public handleClearContext(): void {

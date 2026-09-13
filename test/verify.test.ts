@@ -278,6 +278,26 @@ body { color: red; }
   const unwrapped = unwrapModelEnvelope('{"response":"Hello from the model."}');
   assert(unwrapped === 'Hello from the model.', 'unwrapModelEnvelope extracts response string');
 
+  const brokenJson =
+    '{\n\n"response": "Please run the following command to remove all instances of \'``\' from the repo:\\n\\n<<<REPLACE path=".">>>\\nexact old text to find\\n``\\\\n\\nexact new text\\n\\\\n\\n<<<END>>>"\n\n}';
+  let jsonParseFailed = false;
+  try {
+    JSON.parse(brokenJson);
+  } catch {
+    jsonParseFailed = true;
+  }
+  assert(jsonParseFailed, 'Pretty JSON with inner path quotes is not valid JSON');
+  const unwrappedBroken = unwrapModelEnvelope(brokenJson);
+  assert(
+    unwrappedBroken.includes('Please run the following command'),
+    'Loose JSON envelope extracts response despite inner path quotes'
+  );
+  assert(!unwrappedBroken.trim().startsWith('{'), 'Loose JSON unwrap drops the wrapper object');
+  const parsedBroken = parseAgentResponse(brokenJson);
+  assert(parsedBroken.toolCalls.length === 0, 'REPLACE path="." is not executed as a workspace edit');
+  assert(!parsedBroken.displayText.includes('"response"'), 'Broken JSON wrapper is not shown as chat');
+  assert(!parsedBroken.displayText.includes('<<<REPLACE'), 'Invalid REPLACE tag is stripped from display');
+
   const mdKeep = stripWrappingMarkdownFence('```bash\necho hi\n```\n', 'README.md');
   assert(mdKeep.includes('```bash'), 'Markdown file keeps intentional bash fence');
 

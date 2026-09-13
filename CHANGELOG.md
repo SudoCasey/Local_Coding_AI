@@ -4,6 +4,23 @@ All notable changes to **Local Coding AI** are documented here.
 Released builds are published as `local-coding-ai-X.X.X.vsix` on
 [GitHub Releases](https://github.com/SudoCasey/Local_Coding_AI/releases).
 
+## [0.3.6] — 2026-09-13
+
+### Summary
+
+Switching models unloads the previous runner from VRAM (chat and generate)
+and loads the new one. Pretty-printed JSON replies with broken inner quotes
+are unwrapped so the assistant is not stuck showing `{ "response": ... }`.
+
+### Changes
+
+- Unload other models via `/api/chat` and `/api/generate`, then wait until they leave VRAM
+- Load the newly selected model immediately when swapping in the dropdown
+- Unwrap pretty/broken `{ "response": ... }` envelopes even when inner quotes break JSON.parse
+- Ignore invalid `REPLACE path="."` tags instead of showing them as chat
+
+**Download:** [local-coding-ai-0.3.6.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.6/local-coding-ai-0.3.6.vsix)
+
 ## [0.3.5] — 2026-09-13
 
 ### Summary

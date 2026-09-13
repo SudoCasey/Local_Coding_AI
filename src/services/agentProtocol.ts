@@ -45,10 +45,12 @@ const READ_RE = /<<<\s*READ\s+path="([^"]+)"\s*>>>/gi;
 const LIST_RE = /<<<\s*LIST\s+path="([^"]*)"\s*>>>/gi;
 const SEARCH_REPLACE_RE =
   /<<<\s*SEARCH\s+path="([^"]+)"\s*>>>([\s\S]*?)<<<\s*REPLACE\s*>>>([\s\S]*?)<<<\s*END\s*>>>/gi;
+const REPLACE_PATH_RE =
+  /<<<\s*REPLACE\s+path="([^"]+)"\s*>>>([\s\S]*?)<<<\s*END\s*>>>/gi;
 const WRITE_RE = /<<<\s*WRITE\s+path="([^"]+)"\s*>>>([\s\S]*?)<<<\s*END\s*>>>/gi;
 const RUN_RE = /<<<\s*RUN\s*>>>([\s\S]*?)<<<\s*END\s*>>>/gi;
 
-const PATH_CMDS = 'LIST|READ|SEARCH|WRITE';
+const PATH_CMDS = 'LIST|READ|SEARCH|WRITE|REPLACE';
 const BARE_CMDS = 'REPLACE|END|RUN';
 const TOOL_NAME_ALIASES: Record<string, string> = {
   LIST: 'LIST',
@@ -158,7 +160,7 @@ export function stripTrailingMarkdownFences(raw: string, relPath: string = ''): 
 /**
  * Qwen and similar models sometimes wrap the whole reply in JSON
  * (`{"response":"..."}`) or a json code fence. Unwrap so protocol blocks
- * and chat text can be parsed.
+ * and chat text can be parsed. Inner `path="."` quotes often break JSON.parse.
  */
 export function unwrapModelEnvelope(raw: string): string {
   let text = String(raw ?? '').trim();
@@ -182,7 +184,41 @@ export function unwrapModelEnvelope(raw: string): string {
       return unwrapModelEnvelope(inner);
     }
   }
+  const loose = extractLooseJsonStringField(text, ['response', 'message', 'content', 'text']);
+  if (loose && loose.trim() && loose.trim() !== text) {
+    return unwrapModelEnvelope(loose);
+  }
   return text === String(raw ?? '').trim() ? String(raw ?? '') : text;
+}
+
+function extractLooseJsonStringField(text: string, keys: string[]): string | undefined {
+  const trimmed = String(text ?? '').trim();
+  if (!trimmed.startsWith('{')) {
+    return undefined;
+  }
+  for (const key of keys) {
+    const re = new RegExp(`"${key}"\\s*:\\s*"`, 'i');
+    const m = re.exec(trimmed);
+    if (!m) {
+      continue;
+    }
+    const from = trimmed.slice(m.index + m[0].length);
+    const close = from.match(/"\s*\}\s*$/);
+    if (!close || close.index === undefined) {
+      continue;
+    }
+    return decodeJsonStringish(from.slice(0, close.index));
+  }
+  return undefined;
+}
+
+function decodeJsonStringish(s: string): string {
+  return String(s ?? '')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t')
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\');
 }
 
 function tryParseJsonObject(text: string): Record<string, unknown> | null {
@@ -230,7 +266,7 @@ export function normalizeProtocolDelimiters(raw: string): string {
   text = text.replace(/[«‹【『]/g, '<').replace(/[»›】』]/g, '>');
 
   text = text.replace(
-    /[\[{]{2,3}\s*(LIST|READ|SEARCH|WRITE)\s+path\s*=\s*["'`]?([^"'\]}\n]+)["'`]?\s*[\]}]{2,3}/gi,
+    /[\[{]{2,3}\s*(LIST|READ|SEARCH|WRITE|REPLACE)\s+path\s*=\s*["'`]?([^"'\]}\n]+)["'`]?\s*[\]}]{2,3}/gi,
     (_m, cmd: string, filePath: string) => `<<<${String(cmd).toUpperCase()} path="${quotePath(filePath)}">>>`
   );
 
@@ -239,7 +275,7 @@ export function normalizeProtocolDelimiters(raw: string): string {
     (full: string, cmd: string, attrs: string) => {
       const name = String(cmd).toUpperCase();
       const pathMatch = String(attrs || '').match(/path\s*=\s*["'`]([^"'`]+)["'`]/i);
-      if (pathMatch && (name === 'LIST' || name === 'READ' || name === 'SEARCH' || name === 'WRITE')) {
+      if (pathMatch && (name === 'LIST' || name === 'READ' || name === 'SEARCH' || name === 'WRITE' || name === 'REPLACE')) {
         return `<<<${name} path="${quotePath(pathMatch[1])}">>>`;
       }
       if (name === 'END' || /^<\//.test(full)) {
@@ -256,7 +292,7 @@ export function normalizeProtocolDelimiters(raw: string): string {
   );
 
   text = text.replace(
-    /[`<]{1,6}\s*(LIST|READ|SEARCH|WRITE)\s+path\s*=\s*["'`]?([^"'>`\n]+?)["'`]?\s*[`>]{1,6}/gi,
+    /[`<]{1,6}\s*(LIST|READ|SEARCH|WRITE|REPLACE)\s+path\s*=\s*["'`]?([^"'>`\n]+?)["'`]?\s*[`>]{1,6}/gi,
     (_m, cmd: string, filePath: string) => `<<<${String(cmd).toUpperCase()} path="${quotePath(filePath)}">>>`
   );
 
@@ -271,7 +307,7 @@ export function normalizeProtocolDelimiters(raw: string): string {
   );
 
   text = text.replace(
-    /^\s*(LIST|READ|SEARCH|WRITE)\s+path\s*=\s*["'`]?([^"'`\n]+?)["'`]?\s*$/gim,
+    /^\s*(LIST|READ|SEARCH|WRITE|REPLACE)\s+path\s*=\s*["'`]?([^"'`\n]+?)["'`]?\s*$/gim,
     (_m, cmd: string, filePath: string) => `<<<${String(cmd).toUpperCase()} path="${quotePath(filePath)}">>>`
   );
 
@@ -281,7 +317,7 @@ export function normalizeProtocolDelimiters(raw: string): string {
   );
 
   text = text.replace(
-    /<<<\s*(LIST|READ|SEARCH|WRITE)\s+path\s*=\s*["']?([^"'\n>]+?)["']?\s*>>>/gi,
+    /<<<\s*(LIST|READ|SEARCH|WRITE|REPLACE)\s+path\s*=\s*["']?([^"'\n>]+?)["']?\s*>>>/gi,
     (_m, cmd: string, filePath: string) => `<<<${String(cmd).toUpperCase()} path="${quotePath(filePath)}">>>`
   );
 
@@ -291,7 +327,7 @@ export function normalizeProtocolDelimiters(raw: string): string {
   );
 
   text = text.replace(
-    /<<<(LIST|READ|SEARCH|WRITE)\s+path="([^"]+)"\s*$/gim,
+    /<<<(LIST|READ|SEARCH|WRITE|REPLACE)\s+path="([^"]+)"\s*$/gim,
     (_m, cmd: string, filePath: string) => `<<<${cmd} path="${filePath}">>>`
   );
 
@@ -418,6 +454,9 @@ export function looksLikeProtocolNoise(text: string): boolean {
   if (stripped.length < 160 && /^(?:LIST|READ|SEARCH|WRITE|RUN|REPLACE|END)\b/i.test(stripped)) {
     return true;
   }
+  if (/^\{\s*"response"\s*:/i.test(t) || /^\{\s*\n\s*"response"\s*:/i.test(t)) {
+    return true;
+  }
   return false;
 }
 
@@ -452,6 +491,21 @@ function isDanglingProtocolLine(line: string): boolean {
     return true;
   }
   return false;
+}
+
+function splitImplicitSearchReplace(body: string): { search: string; replace: string } | null {
+  const raw = String(body ?? '').trim();
+  if (!raw) {
+    return null;
+  }
+  if (/exact old text to find/i.test(raw) && /exact new text/i.test(raw)) {
+    return null;
+  }
+  const parts = raw.split(/\n<<<REPLACE>>>\n/);
+  if (parts.length === 2) {
+    return { search: parts[0], replace: parts[1] };
+  }
+  return null;
 }
 
 export function toCanonicalProtocolText(raw: string): string {
@@ -540,7 +594,7 @@ export function parseAgentResponse(raw: string): ParsedAgentResponse {
 
   text = text.replace(SEARCH_REPLACE_RE, (_m, p1: string, search: string, replace: string) => {
     const path = normalizeRelPath(p1);
-    if (path) {
+    if (path && path !== '.') {
       toolCalls.push({
         kind: 'search_replace',
         path,
@@ -552,9 +606,26 @@ export function parseAgentResponse(raw: string): ParsedAgentResponse {
     return '';
   });
 
+  text = text.replace(REPLACE_PATH_RE, (_m, p1: string, body: string) => {
+    const path = normalizeRelPath(p1);
+    if (path && path !== '.' && looksLikeFilePath(path)) {
+      const split = splitImplicitSearchReplace(String(body ?? ''));
+      if (split) {
+        toolCalls.push({
+          kind: 'search_replace',
+          path,
+          search: stripWrappingMarkdownFence(split.search, path),
+          replace: stripWrappingMarkdownFence(split.replace, path),
+        });
+        statusLines.push(`Edited \`${path}\``);
+      }
+    }
+    return '';
+  });
+
   text = text.replace(WRITE_RE, (_m, p1: string, content: string) => {
     const path = normalizeRelPath(p1);
-    if (path) {
+    if (path && path !== '.') {
       toolCalls.push({
         kind: 'write',
         path,

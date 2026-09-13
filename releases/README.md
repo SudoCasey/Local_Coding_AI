@@ -18,6 +18,7 @@ Full change history: [`CHANGELOG.md`](../CHANGELOG.md)
 
 | Version | Download | Summary |
 | :--- | :--- | :--- |
+| **0.3.6** | [local-coding-ai-0.3.6.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.6/local-coding-ai-0.3.6.vsix) | Unload the old model on swap; unwrap broken JSON replies |
 | **0.3.5** | [local-coding-ai-0.3.5.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.5/local-coding-ai-0.3.5.vsix) | Recover malformed tool tags so the assistant actually edits the repo |
 | **0.3.4** | [local-coding-ai-0.3.4.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.4/local-coding-ai-0.3.4.vsix) | Unload 1.5B before 7B; unwrap JSON replies; stable chat scroll |
 | **0.3.3** | [local-coding-ai-0.3.3.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.3/local-coding-ai-0.3.3.vsix) | Keep the chat model in VRAM between prompts |
@@ -28,7 +29,13 @@ Full change history: [`CHANGELOG.md`](../CHANGELOG.md)
 | **0.1.1** | [local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix) | Fixes Windows Ollama hang/flash for larger models; security + efficiency hardening |
 | **0.1.0** | [local-coding-ai-0.1.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.0/local-coding-ai-0.1.0.vsix) | Initial public release — Auto mode, context limits, model pulls, resource cleanup |
 
-**Latest:** [local-coding-ai-0.3.5.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.5/local-coding-ai-0.3.5.vsix)
+**Latest:** [local-coding-ai-0.3.6.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.6/local-coding-ai-0.3.6.vsix)
+
+### 0.3.6
+
+Switching models unloads the previous runner from VRAM and loads the new one. Pretty-printed JSON replies with broken inner quotes are unwrapped instead of shown as chat.
+
+Details: [`v0.3.6.md`](./v0.3.6.md)
 
 ### 0.3.5
 
@@ -88,7 +95,7 @@ Details: [`v0.1.0.md`](./v0.1.0.md)
 ## Install
 
 ```powershell
-code --install-extension .\local-coding-ai-0.3.5.vsix
+code --install-extension .\local-coding-ai-0.3.6.vsix
 ```
 
 Or: VS Code → **Extensions** → `⋯` → **Install from VSIX…**

@@ -63,6 +63,10 @@ function splitModelName(name: string): [string, string | undefined] {
   return [name.slice(0, i), name.slice(i + 1)];
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class OllamaService {
   private baseUrl: string;
 
@@ -278,49 +282,60 @@ export class OllamaService {
   }
 
   /**
-   * Keep the target model loaded. Unload other runners only when switching models,
-   * and wait until they actually leave /api/ps so a 7B load is not blocked by 1.5B.
+   * Keep the target model loaded. Unload every other runner first (even if the
+   * target is already in /api/ps), and wait until they leave VRAM.
    */
   public async ensureModelSlot(
     targetModel: string,
     onStatus?: (status: string) => void
   ): Promise<{ alreadyLoaded: boolean }> {
+    await this.unloadOtherModels(targetModel, onStatus);
+
     const running = await this.getRunningModels();
-    const alreadyLoaded = running.some((r) =>
-      modelNamesMatch(r.name || r.model, targetModel)
-    );
-    if (alreadyLoaded) {
-      return { alreadyLoaded: true };
+    const blocking = running.filter((r) => !modelNamesMatch(r.name || r.model, targetModel));
+    if (blocking.length > 0) {
+      const names = blocking.map((r) => r.name || r.model).join(', ');
+      throw new Error(
+        `Could not unload ${names} from VRAM so '${targetModel}' can load. Click Free VRAM, wait until no models are listed, then retry.`
+      );
     }
 
-    const others = running.filter((r) => !modelNamesMatch(r.name || r.model, targetModel));
-    if (others.length === 0) {
-      return { alreadyLoaded: false };
+    const alreadyLoaded = running.some((r) => modelNamesMatch(r.name || r.model, targetModel));
+    if (!alreadyLoaded) {
+      onStatus?.(`Loading ${targetModel} into VRAM…`);
     }
+    return { alreadyLoaded };
+  }
 
-    for (const r of others) {
-      const name = r.name || r.model;
-      onStatus?.(`Unloading ${name} so ${targetModel} can load…`);
-      await this.unloadModel(name);
+  /**
+   * Load a model into VRAM without waiting for a user prompt.
+   */
+  public async preloadModel(
+    modelName: string,
+    onStatus?: (status: string) => void
+  ): Promise<void> {
+    const name = String(modelName || '').trim();
+    if (!name) {
+      return;
     }
-
-    const deadline = Date.now() + 25000;
-    while (Date.now() < deadline) {
-      const still = await this.getRunningModels();
-      const blocking = still.filter((r) => !modelNamesMatch(r.name || r.model, targetModel));
-      if (blocking.length === 0) {
-        onStatus?.(`Loading ${targetModel} into VRAM…`);
-        return { alreadyLoaded: false };
-      }
-      for (const r of blocking) {
-        onStatus?.(`Still unloading ${r.name || r.model}…`);
-        await this.unloadModel(r.name || r.model);
-      }
-      await new Promise((resolve) => setTimeout(resolve, 500));
+    onStatus?.(`Loading ${name} into VRAM…`);
+    const response = await this.fetchWithTimeout(`${this.baseUrl}/api/chat`, {
+      method: 'POST',
+      timeout: 120000,
+      body: JSON.stringify({
+        model: name,
+        messages: [{ role: 'user', content: '.' }],
+        stream: false,
+        keep_alive: -1,
+        options: { num_predict: 1, temperature: 0 },
+      }),
+    });
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      throw new Error(
+        `Failed to load '${name}' into VRAM (${response.status}). ${errText || 'Click Free VRAM, then retry.'}`
+      );
     }
-
-    onStatus?.(`Loading ${targetModel}…`);
-    return { alreadyLoaded: false };
   }
 
   /**
@@ -530,28 +545,44 @@ export class OllamaService {
   }
 
   /**
-   * Unload a specific model from GPU VRAM immediately by setting keep_alive: 0
+   * Unload a model from GPU VRAM. Chat-loaded runners often ignore /api/generate
+   * keep_alive: 0, so try /api/chat first, then /api/generate.
    */
   public async unloadModel(modelName: string): Promise<boolean> {
-    try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/api/generate`, {
-        method: 'POST',
-        timeout: 10000,
-        body: JSON.stringify({
-          model: modelName,
-          prompt: '',
-          stream: false,
-          keep_alive: 0,
-        }),
-      });
-      return response.ok;
-    } catch {
+    const name = String(modelName || '').trim();
+    if (!name) {
       return false;
     }
+    const attempts: { url: string; body: Record<string, unknown> }[] = [
+      {
+        url: `${this.baseUrl}/api/chat`,
+        body: { model: name, messages: [], stream: false, keep_alive: 0 },
+      },
+      {
+        url: `${this.baseUrl}/api/generate`,
+        body: { model: name, prompt: '', stream: false, keep_alive: 0 },
+      },
+    ];
+    let ok = false;
+    for (const attempt of attempts) {
+      try {
+        const response = await this.fetchWithTimeout(attempt.url, {
+          method: 'POST',
+          timeout: 30000,
+          body: JSON.stringify(attempt.body),
+        });
+        if (response.ok) {
+          ok = true;
+        }
+      } catch {
+        // Try the next unload endpoint.
+      }
+    }
+    return ok;
   }
 
   /**
-   * Free all loaded models from GPU VRAM
+   * Free all loaded models from GPU VRAM and wait until /api/ps is empty.
    */
   public async unloadAllModels(): Promise<{ unloadedCount: number; errors: string[] }> {
     const running = await this.getRunningModels();
@@ -559,19 +590,58 @@ export class OllamaService {
     const errors: string[] = [];
 
     for (const r of running) {
+      const name = r.name || r.model;
       try {
-        const ok = await this.unloadModel(r.name || r.model);
+        const ok = await this.unloadModel(name);
         if (ok) {
           unloadedCount++;
         } else {
-          errors.push(`Failed to unload model ${r.name}`);
+          errors.push(`Failed to unload model ${name}`);
         }
       } catch (e: any) {
         errors.push(e.message);
       }
     }
 
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+      const still = await this.getRunningModels();
+      if (still.length === 0) {
+        break;
+      }
+      for (const r of still) {
+        await this.unloadModel(r.name || r.model);
+      }
+      await sleep(500);
+    }
+
     return { unloadedCount, errors };
+  }
+
+  private async unloadOtherModels(
+    targetModel: string,
+    onStatus?: (status: string) => void
+  ): Promise<void> {
+    const deadline = Date.now() + 45000;
+    let pass = 0;
+    while (Date.now() < deadline) {
+      const running = await this.getRunningModels();
+      const blocking = running.filter((r) => !modelNamesMatch(r.name || r.model, targetModel));
+      if (blocking.length === 0) {
+        return;
+      }
+      for (const r of blocking) {
+        const name = r.name || r.model;
+        onStatus?.(
+          pass === 0
+            ? `Unloading ${name} so ${targetModel} can load…`
+            : `Still unloading ${name}…`
+        );
+        await this.unloadModel(name);
+      }
+      pass += 1;
+      await sleep(750);
+    }
   }
 
   /**
