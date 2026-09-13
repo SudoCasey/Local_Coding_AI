@@ -4,6 +4,24 @@ All notable changes to **Local Coding AI** are documented here.
 Released builds are published as `local-coding-ai-X.X.X.vsix` on
 [GitHub Releases](https://github.com/SudoCasey/Local_Coding_AI/releases).
 
+## [0.3.5] — 2026-09-13
+
+### Summary
+
+Malformed tool tags from small local models (backticks, fences, XML, JSON)
+are recovered so LIST/READ/WRITE actually run instead of being shown as chat
+text. Repo-wide tasks list the workspace root, and greetings no longer inspect
+the currently open file.
+
+### Changes
+
+- Recover backtick, fence, XML, JSON, and loose LIST/READ/WRITE/RUN tags
+- Treat LIST of a file as READ; repo tasks also list the workspace root
+- Hide leftover protocol from chat and store canonical `<<< >>>` tags
+- Reply in plain text to greetings like “Hello?” instead of listing a file
+
+**Download:** [local-coding-ai-0.3.5.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.5/local-coding-ai-0.3.5.vsix)
+
 ## [0.3.4] — 2026-09-13
 
 ### Summary

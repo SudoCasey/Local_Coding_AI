@@ -13,7 +13,7 @@ import {
 import { clampContextWindow } from '../services/ollamaUrlPolicy';
 import { AgentExecutor } from '../services/agentExecutor';
 import { ChangeTracker } from '../services/changeTracker';
-import { looksLikeWorkspaceTask } from '../services/agentProtocol';
+import { looksLikeChitchat, looksLikeWorkspaceTask } from '../services/agentProtocol';
 import {
   WritePermissionMode,
   WritePermissionService,
@@ -518,7 +518,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           const tree = await this.workspaceService.getWorkspaceFileTree(80);
           const lastUser = [...inferenceMessages].reverse().find((m) => m.role === 'user');
           if (lastUser) {
-            lastUser.content = `${lastUser.content}\n\n[WORKSPACE FILES]\n${tree}\nUse LIST/READ on these paths as needed. Do not ask the user to describe the repo.`;
+            lastUser.content = `${lastUser.content}\n\n[WORKSPACE FILES]\n${tree}\nThese are workspace paths. For repo-wide work use <<<LIST path=".">>> then READ files. Do not LIST a single file — READ it. Do not ask the user to describe the repo.`;
           }
         } catch {
           // File index is helpful but not required.
@@ -529,6 +529,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         model: recommendation.modelName,
         abortSignal: this.abortController.signal,
         nudgeIfNoTools: looksLikeWorkspaceTask(rawPrompt),
+        preferPlainReply: looksLikeChitchat(rawPrompt),
         onVisibleChunk: (chunk: string) => {
           this.postMessage({
             type: 'chunk',

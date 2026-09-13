@@ -15,7 +15,7 @@ import {
   isWriteActionAllowlisted,
   normalizeWriteActionType,
 } from '../src/services/writePermissionPolicy';
-import { parseAgentResponse, stripWrappingMarkdownFence, looksLikeWorkspaceTask, unwrapModelEnvelope } from '../src/services/agentProtocol';
+import { parseAgentResponse, stripWrappingMarkdownFence, looksLikeWorkspaceTask, looksLikeChitchat, unwrapModelEnvelope, looksLikeProtocolNoise } from '../src/services/agentProtocol';
 import { ChangeTracker } from '../src/services/changeTracker';
 import { OllamaModelInfo } from '../src/types';
 
@@ -289,7 +289,140 @@ body { color: red; }
   assert(looksLikeWorkspaceTask('Improve this app'), 'Improve-app prompt is a workspace task');
   assert(looksLikeWorkspaceTask('Remove comments from this repo'), 'Remove-comments prompt is a workspace task');
   assert(looksLikeWorkspaceTask('audit this repo for syntax errors'), 'Audit prompt is a workspace task');
+  assert(looksLikeWorkspaceTask('Remove all instances of "```" from this repo'), 'Remove-fences prompt is a workspace task');
   assert(!looksLikeWorkspaceTask('what is the syntax for a typescript interface?'), 'Trivia question is not a workspace task');
+  assert(looksLikeChitchat('Hello?'), 'Hello? is chitchat');
+  assert(looksLikeChitchat('hi'), 'hi is chitchat');
+  assert(!looksLikeChitchat('Hello, please fix the CSS'), 'Request after greeting is not chitchat');
+  assert(!looksLikeWorkspaceTask('Hello?'), 'Hello? is not a workspace task');
+
+  const backtickList = parseAgentResponse('``LIST path="src/styles.css"``');
+  assert(
+    backtickList.toolCalls.length === 1 && backtickList.toolCalls[0].kind === 'read',
+    'Double-backtick LIST of a file becomes READ'
+  );
+  assert(
+    (backtickList.toolCalls[0] as any).path === 'src/styles.css',
+    'Backtick LIST keeps the file path'
+  );
+  assert(!backtickList.displayText.includes('LIST'), 'Backtick LIST is not shown as chat text');
+  assert(looksLikeProtocolNoise('``LIST path="src/styles.css"``'), 'Raw backtick LIST is protocol noise');
+
+  const backtickListRoot = parseAgentResponse('``LIST path="."``');
+  assert(
+    backtickListRoot.toolCalls.length === 1 && backtickListRoot.toolCalls[0].kind === 'list',
+    'Double-backtick LIST of . stays LIST'
+  );
+
+  const singleTickList = parseAgentResponse('`LIST path="src/app.ts"`');
+  assert(
+    singleTickList.toolCalls.length === 1 && (singleTickList.toolCalls[0] as any).path === 'src/app.ts',
+    'Single-backtick LIST is recovered'
+  );
+
+  const fencedList = parseAgentResponse('```\nLIST path="src/styles.css"\n```');
+  assert(
+    fencedList.toolCalls.length === 1 && fencedList.toolCalls[0].kind === 'read',
+    'Fenced LIST path= line is recovered'
+  );
+
+  const xmlList = parseAgentResponse('<LIST path="src/styles.css" />');
+  assert(
+    xmlList.toolCalls.length === 1 && xmlList.toolCalls[0].kind === 'read',
+    'XML LIST tag is recovered'
+  );
+
+  const jsonTool = parseAgentResponse(JSON.stringify({ tool: 'list', path: 'src/styles.css' }));
+  assert(
+    jsonTool.toolCalls.length === 1 && jsonTool.toolCalls[0].kind === 'read',
+    'JSON tool envelope LIST of a file becomes READ'
+  );
+
+  const squareList = parseAgentResponse('[[LIST path="src/a.ts"]]');
+  assert(
+    squareList.toolCalls.length === 1 && squareList.toolCalls[0].kind === 'read',
+    'Square-bracket LIST is recovered'
+  );
+
+  const unquoted = parseAgentResponse('<<<LIST path=src/a.ts>>>');
+  assert(
+    unquoted.toolCalls.length === 1 && (unquoted.toolCalls[0] as any).path === 'src/a.ts',
+    'Unquoted path in LIST is recovered'
+  );
+
+  const singleQuoted = parseAgentResponse("<<<READ path='src/a.ts'>>>");
+  assert(
+    singleQuoted.toolCalls.length === 1 && (singleQuoted.toolCalls[0] as any).path === 'src/a.ts',
+    'Single-quoted READ path is recovered'
+  );
+
+  const fnList = parseAgentResponse('LIST("src/a.ts")');
+  assert(
+    fnList.toolCalls.length === 1 && fnList.toolCalls[0].kind === 'read',
+    'LIST("path") function form is recovered'
+  );
+
+  const twoAngle = parseAgentResponse('<<LIST path="src/a.ts">>');
+  assert(
+    twoAngle.toolCalls.length === 1 && twoAngle.toolCalls[0].kind === 'read',
+    'Two-angle LIST is recovered'
+  );
+
+  const backtickWrite = parseAgentResponse(
+    '``WRITE path="src/app.css"``\nbody { color: red; }\n``END``'
+  );
+  assert(
+    backtickWrite.toolCalls.length === 1 && backtickWrite.toolCalls[0].kind === 'write',
+    'Backtick WRITE/END is recovered'
+  );
+  assert(
+    (backtickWrite.toolCalls[0] as any).content.includes('body { color: red; }'),
+    'Backtick WRITE keeps CSS body'
+  );
+  assert(!backtickWrite.displayText.includes('WRITE'), 'Backtick WRITE is not shown as chat text');
+
+  const backtickSearch = parseAgentResponse(
+    '``SEARCH path="src/a.ts"``\nold\n``REPLACE``\nnew\n``END``'
+  );
+  assert(
+    backtickSearch.toolCalls.length === 1 && backtickSearch.toolCalls[0].kind === 'search_replace',
+    'Backtick SEARCH/REPLACE is recovered'
+  );
+
+  const backtickRun = parseAgentResponse('``RUN``\nnpm test\n``END``');
+  assert(
+    backtickRun.toolCalls.length === 1 &&
+      backtickRun.toolCalls[0].kind === 'run' &&
+      (backtickRun.toolCalls[0] as any).command === 'npm test',
+    'Backtick RUN/END is recovered'
+  );
+
+  const jsonReadFile = parseAgentResponse(
+    JSON.stringify({ name: 'read_file', arguments: { path: 'src/a.ts' } })
+  );
+  assert(
+    jsonReadFile.toolCalls.length === 1 &&
+      jsonReadFile.toolCalls[0].kind === 'read' &&
+      (jsonReadFile.toolCalls[0] as any).path === 'src/a.ts',
+    'JSON read_file alias is recovered'
+  );
+
+  const unclosedWrite = parseAgentResponse('<<<WRITE path="src/ok.ts">>>\nexport const x = 1;\n```');
+  assert(
+    unclosedWrite.toolCalls.length === 1 && unclosedWrite.toolCalls[0].kind === 'write',
+    'WRITE missing END still parses when a fence closer is used'
+  );
+  assert((unclosedWrite.toolCalls[0] as any).content.includes('export const x = 1;'), 'Unclosed WRITE keeps source');
+
+  const canonicalStillWorks = parseAgentResponse('<<<LIST path=".">>>\nI will inspect the workspace.');
+  assert(
+    canonicalStillWorks.toolCalls.length === 1 && canonicalStillWorks.toolCalls[0].kind === 'list',
+    'Canonical <<<LIST>>> still parses after normalizer'
+  );
+  assert(
+    canonicalStillWorks.displayText.includes('I will inspect the workspace.'),
+    'Canonical LIST still keeps surrounding prose'
+  );
 
   const promptText = ctxManager.getSystemPrompt();
   assert(!promptText.includes('```css'), 'System prompt does not name css fences (avoids 7b refusals)');
