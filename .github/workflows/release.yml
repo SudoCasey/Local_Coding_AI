@@ -57,32 +57,24 @@ jobs:
               $tag = "v$version"
             }
           }
+          $notesPath = "releases/v$version.md"
+          if (-not (Test-Path $notesPath)) {
+            throw "Missing release notes file: $notesPath (add Summary + Changes before tagging)"
+          }
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "asset=$asset" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Write-Host "Publishing $asset as release $tag"
+          "notes=$notesPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Publishing $asset as release $tag using $notesPath"
 
       - name: Create GitHub Release with VSIX
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: Local Coding AI ${{ steps.meta.outputs.version }}
-          body: |
-            ## Local Coding AI ${{ steps.meta.outputs.version }}
-
-            ### Download
-
-            **[⬇️ ${{ steps.meta.outputs.asset }}](https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/${{ steps.meta.outputs.asset }})**
-
-            ### Install
-
-            ```powershell
-            code --install-extension ${{ steps.meta.outputs.asset }}
-            ```
-
-            Or in VS Code: **Extensions** → **Install from VSIX…**
+          body_path: ${{ steps.meta.outputs.notes }}
           files: ${{ steps.meta.outputs.asset }}
           fail_on_unmatched_files: true
-          generate_release_notes: true
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

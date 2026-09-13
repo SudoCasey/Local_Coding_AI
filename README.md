@@ -27,10 +27,22 @@ code --install-extension local-coding-ai-0.1.1.vsix
 
 Or in VS Code: **Extensions** → `⋯` → **Install from VSIX…**
 
-| Version | Download | Notes |
+| Version | Download | Summary |
 | :--- | :--- | :--- |
-| **0.1.1** | [local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix) | Windows Ollama tray launch, no CMD flash / 7B hang, security + efficiency hardening |
-| **0.1.0** | [local-coding-ai-0.1.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.0/local-coding-ai-0.1.0.vsix) | Initial public release — Auto mode roles, context limits, silent Ollama launch, resource cleanup |
+| **0.1.1** | [local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix) | Fixes Windows Ollama hang/flash for larger models; security + efficiency hardening |
+| **0.1.0** | [local-coding-ai-0.1.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.0/local-coding-ai-0.1.0.vsix) | Initial public release — Auto mode, context limits, model pulls, resource cleanup |
+
+### 0.1.1
+
+Fixes Windows Ollama reliability: larger models (such as 7B) no longer hang on “Connecting…”, and CMD windows no longer flash when VS Code opens or Ollama starts. Also hardens security around remote URLs and workspace file tools.
+
+Full notes: [`releases/v0.1.1.md`](./releases/v0.1.1.md) · [`CHANGELOG.md`](./CHANGELOG.md)
+
+### 0.1.0
+
+Initial public release of the offline VS Code coding assistant powered by Ollama and Qwen 2.5 Coder. Includes Auto mode routing, in-extension context limits, model download/update UI, and cleanup on deactivate.
+
+Full notes: [`releases/v0.1.0.md`](./releases/v0.1.0.md) · [`CHANGELOG.md`](./CHANGELOG.md)
 
 See [`releases/README.md`](./releases/README.md) for naming and how maintainers publish a new build.
 
