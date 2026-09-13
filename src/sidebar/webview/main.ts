@@ -977,7 +977,9 @@ window.addEventListener('message', (event) => {
           const body = currentAssistantMessageEl.querySelector('.message-body');
           if (body && !currentAssistantText) {
             const modelName = escapeHtml(message.payload.modelUsed || 'model');
-            body.innerHTML = `<em>Loading ${modelName} into VRAM…</em>`;
+            body.innerHTML = message.payload.modelAlreadyLoaded
+              ? `<em>Thinking…</em>`
+              : `<em>Loading ${modelName} into VRAM…</em>`;
           }
         }
       }

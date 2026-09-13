@@ -4,6 +4,23 @@ All notable changes to **Local Coding AI** are documented here.
 Released builds are published as `local-coding-ai-X.X.X.vsix` on
 [GitHub Releases](https://github.com/SudoCasey/Local_Coding_AI/releases).
 
+## [0.3.3] — 2026-09-13
+
+### Summary
+
+The current chat model stays in VRAM between prompts. It is unloaded only
+when you click Free VRAM, when the selected model changes, or when VS Code
+closes.
+
+### Changes
+
+- Keep the loaded model in VRAM after each prompt (`keep_alive: -1` by default)
+- Unload other runners only when switching models, not on every request
+- Compaction uses the current chat model so a fast model does not evict it
+- Status shows “Thinking…” when the model is already loaded
+
+**Download:** [local-coding-ai-0.3.3.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.3/local-coding-ai-0.3.3.vsix)
+
 ## [0.3.2] — 2026-09-13
 
 ### Summary

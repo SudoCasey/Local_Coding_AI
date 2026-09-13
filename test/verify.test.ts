@@ -9,6 +9,7 @@ import {
   isLoopbackOllamaUrl,
   normalizeOllamaUrl,
 } from '../src/services/ollamaUrlPolicy';
+import { modelNamesMatch, parseKeepAlive } from '../src/services/ollamaService';
 import {
   describeWriteAction,
   isWriteActionAllowlisted,
@@ -42,6 +43,15 @@ async function runTests() {
   assert(clampContextWindow(100) === 512, 'Context window floors at 512');
   assert(clampContextWindow(9999999) === 1048576, 'Context window caps at 1,048,576');
   assert(clampContextWindow(Number.NaN) === 16384, 'Invalid context falls back to 16384');
+
+  console.log('\n--- Testing model keep-alive ---');
+  assert(parseKeepAlive(undefined) === -1, 'Missing keep-alive stays loaded (-1)');
+  assert(parseKeepAlive('-1') === -1, 'String -1 stays loaded');
+  assert(parseKeepAlive('10m') === '10m', 'Duration strings are preserved');
+  assert(parseKeepAlive('0') === 0, '0 unloads immediately');
+  assert(modelNamesMatch('qwen2.5-coder:7b', 'qwen2.5-coder:7b'), 'Exact model names match');
+  assert(modelNamesMatch('Qwen2.5-Coder:7b', 'qwen2.5-coder:7b'), 'Model name match is case-insensitive');
+  assert(!modelNamesMatch('qwen2.5-coder:7b', 'qwen2.5-coder:1.5b'), 'Different size tags do not match');
 
   console.log('\n--- Testing Hidden Process Launch ---');
   assert(typeof spawnDetachedHidden === 'function', 'Hidden spawn helper is exported');

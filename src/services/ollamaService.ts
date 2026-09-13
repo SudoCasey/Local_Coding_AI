@@ -17,6 +17,52 @@ class OllamaStreamError extends Error {}
 const FIRST_TOKEN_TIMEOUT_MS = 120000;
 const LOAD_STATUS_INTERVAL_MS = 8000;
 
+export function parseKeepAlive(value: string | number | undefined | null): string | number {
+  if (value === undefined || value === null || value === '') {
+    return -1;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  const v = String(value).trim();
+  if (!v || v === '-1' || /^(forever|infinite|indefinite)$/i.test(v)) {
+    return -1;
+  }
+  if (v === '0') {
+    return 0;
+  }
+  return v;
+}
+
+export function modelNamesMatch(a: string, b: string): boolean {
+  const na = String(a || '')
+    .trim()
+    .toLowerCase();
+  const nb = String(b || '')
+    .trim()
+    .toLowerCase();
+  if (!na || !nb) {
+    return false;
+  }
+  if (na === nb) {
+    return true;
+  }
+  const [aBase, aTag = 'latest'] = splitModelName(na);
+  const [bBase, bTag = 'latest'] = splitModelName(nb);
+  if (aBase !== bBase) {
+    return false;
+  }
+  return aTag === bTag || aTag.startsWith(`${bTag}-`) || bTag.startsWith(`${aTag}-`);
+}
+
+function splitModelName(name: string): [string, string | undefined] {
+  const i = name.lastIndexOf(':');
+  if (i <= 0) {
+    return [name, undefined];
+  }
+  return [name.slice(0, i), name.slice(i + 1)];
+}
+
 export class OllamaService {
   private baseUrl: string;
 
@@ -232,22 +278,24 @@ export class OllamaService {
   }
 
   /**
-   * Unload every runner that is not the target model so a 7B load is not
-   * blocked behind a stuck 1.5B llama-server process.
+   * Keep the target model loaded. Unload other runners only when switching models.
+   * Does nothing if the target is already in VRAM.
    */
-  public async ensureModelSlot(targetModel: string): Promise<void> {
-    const target = targetModel.toLowerCase();
+  public async ensureModelSlot(targetModel: string): Promise<{ alreadyLoaded: boolean }> {
     const running = await this.getRunningModels();
+    const alreadyLoaded = running.some((r) =>
+      modelNamesMatch(r.name || r.model, targetModel)
+    );
+    if (alreadyLoaded) {
+      return { alreadyLoaded: true };
+    }
     for (const r of running) {
-      const name = (r.name || r.model || '').toLowerCase();
-      if (!name || name === target) {
-        continue;
-      }
       await Promise.race([
         this.unloadModel(r.name || r.model),
         new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 4000)),
       ]);
     }
+    return { alreadyLoaded: false };
   }
 
   /**
@@ -257,10 +305,11 @@ export class OllamaService {
     model: string,
     messages: ChatMessage[],
     options: OllamaChatOptions = {},
-    keepAlive: string = '10m',
+    keepAlive: string | number = -1,
     onChunk: (chunk: string) => void,
     abortSignal?: AbortSignal,
-    onStatus?: (status: string) => void
+    onStatus?: (status: string) => void,
+    alreadyLoaded: boolean = false
   ): Promise<string> {
     const payload = {
       model,
@@ -277,7 +326,7 @@ export class OllamaService {
         top_k: options.top_k ?? 40,
         stop: options.stop,
       },
-      keep_alive: keepAlive,
+      keep_alive: parseKeepAlive(keepAlive),
     };
 
     const controller = new AbortController();
@@ -294,7 +343,11 @@ export class OllamaService {
     }, FIRST_TOKEN_TIMEOUT_MS);
     const statusTimer = setInterval(() => {
       if (!receivedOutput) {
-        onStatus?.(`Still loading ${model} into VRAM… this can take up to a minute on first use.`);
+        onStatus?.(
+          alreadyLoaded
+            ? `Waiting on ${model}…`
+            : `Still loading ${model} into VRAM… this can take up to a minute on first use.`
+        );
       }
     }, LOAD_STATUS_INTERVAL_MS);
 
@@ -405,7 +458,8 @@ export class OllamaService {
     model: string,
     prompt: string,
     options: OllamaChatOptions = {},
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    keepAlive: string | number = -1
   ): Promise<string> {
     const payload = {
       model,
@@ -416,7 +470,7 @@ export class OllamaService {
         num_ctx: options.num_ctx ?? 4096,
         temperature: options.temperature ?? 0.1,
       },
-      keep_alive: '5m',
+      keep_alive: parseKeepAlive(keepAlive),
     };
 
     // Prefer caller abort signal; otherwise time out so callers (e.g. compaction) can fall back.

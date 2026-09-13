@@ -2,7 +2,7 @@
   "name": "local-coding-ai",
   "displayName": "Local Coding AI",
   "description": "Completely offline, local VS Code coding AI assistant powered by Ollama and open-weight models.",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "publisher": "local-coding-ai",
   "author": {
     "name": "Casey Friedrich",
@@ -262,8 +262,8 @@
         },
         "localCodingAI.keepAlive": {
           "type": "string",
-          "default": "10m",
-          "description": "Duration to keep model loaded in VRAM after request completes."
+          "default": "-1",
+          "description": "How long to keep the model in VRAM after a request. Use -1 to keep it loaded until Free VRAM, a model switch, or VS Code closes."
         },
         "localCodingAI.writePermissionMode": {
           "type": "string",

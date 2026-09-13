@@ -35,6 +35,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private abortController?: AbortController;
   private activePulls: Map<string, AbortController> = new Map();
   private refreshTimer?: ReturnType<typeof setTimeout>;
+  private lastChatModel?: string;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -441,10 +442,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const config = vscode.workspace.getConfiguration('localCodingAI');
     const maxContext = clampContextWindow(config.get<number>('contextWindow') || 16384);
     const compactionThreshold = config.get<number>('autoCompactionThreshold') || 0.75;
-    const fastModel = config.get<string>('fastModel') || 'qwen2.5-coder:1.5b';
     const gpuLayers = config.get<number>('gpuLayers') ?? 99;
     const temperature = config.get<number>('temperature') ?? 0.2;
-    const keepAlive = config.get<string>('keepAlive') || '10m';
+    const keepAlive = config.get<string>('keepAlive') ?? '-1';
 
     const availableModels = await this.ollamaService.listLocalModels().catch(() => []);
     const recommendation = this.modelRouter.route(
@@ -452,39 +452,42 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       this.contextManager.getTotalTokens(),
       availableModels
     );
-
-    this.postMessage({
-      type: 'chunk',
-      payload: {
-        modelUsed: recommendation.modelName,
-        routingReason: recommendation.reason,
-        isStart: true,
-      },
-    });
-
-    if (this.contextManager.shouldCompact(maxContext, compactionThreshold)) {
-      this.postMessage({
-        type: 'chunk',
-        payload: {
-          status: 'Compacting conversation history…',
-        },
-      });
-
-      try {
-        const compactionResult = await this.contextManager.compact(fastModel);
-        this.postMessage({
-          type: 'contextCompacted',
-          payload: compactionResult,
-        });
-      } catch (err: any) {
-        console.warn('Auto compaction error:', err);
-      }
-    }
+    this.lastChatModel = recommendation.modelName;
 
     this.abortController = new AbortController();
 
     try {
-      await this.ollamaService.ensureModelSlot(recommendation.modelName);
+      const slot = await this.ollamaService.ensureModelSlot(recommendation.modelName);
+
+      this.postMessage({
+        type: 'chunk',
+        payload: {
+          modelUsed: recommendation.modelName,
+          routingReason: recommendation.reason,
+          isStart: true,
+          modelAlreadyLoaded: slot.alreadyLoaded,
+        },
+      });
+
+      if (this.contextManager.shouldCompact(maxContext, compactionThreshold)) {
+        this.postMessage({
+          type: 'chunk',
+          payload: {
+            status: 'Compacting conversation history…',
+          },
+        });
+
+        try {
+          const compactionResult = await this.contextManager.compact(recommendation.modelName);
+          this.postMessage({
+            type: 'contextCompacted',
+            payload: compactionResult,
+          });
+        } catch (err: any) {
+          console.warn('Auto compaction error:', err);
+        }
+      }
+
       const messagesToSend = this.contextManager.prepareMessagesForInference();
       const inferenceMessages = messagesToSend.map((m) => ({
         role: m.role,
@@ -534,7 +537,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             keepAlive,
             onChunk,
             this.abortController?.signal,
-            onStatus
+            onStatus,
+            slot.alreadyLoaded
           );
         },
       });
@@ -630,7 +634,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   public async handleCompactContext(): Promise<void> {
     const config = vscode.workspace.getConfiguration('localCodingAI');
-    const fastModel = config.get<string>('fastModel') || 'qwen2.5-coder:1.5b';
+    const selected = this.modelRouter.getSelectedModel();
+    const compactModel =
+      this.lastChatModel ||
+      (selected && selected !== 'auto' ? selected : undefined) ||
+      config.get<string>('primaryModel') ||
+      'qwen2.5-coder:7b';
 
     vscode.window.withProgress(
       {
@@ -639,7 +648,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         cancellable: false,
       },
       async () => {
-        const result = await this.contextManager.compact(fastModel);
+        const result = await this.contextManager.compact(compactModel);
         this.postMessage({
           type: 'contextCompacted',
           payload: result,
