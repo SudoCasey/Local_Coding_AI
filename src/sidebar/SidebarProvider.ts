@@ -457,17 +457,36 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this.abortController = new AbortController();
 
     try {
-      const slot = await this.ollamaService.ensureModelSlot(recommendation.modelName);
-
       this.postMessage({
         type: 'chunk',
         payload: {
           modelUsed: recommendation.modelName,
           routingReason: recommendation.reason,
           isStart: true,
-          modelAlreadyLoaded: slot.alreadyLoaded,
+          modelAlreadyLoaded: false,
         },
       });
+
+      const slot = await this.ollamaService.ensureModelSlot(
+        recommendation.modelName,
+        (status) => {
+          this.postMessage({
+            type: 'chunk',
+            payload: { status },
+          });
+        }
+      );
+
+      if (slot.alreadyLoaded) {
+        this.postMessage({
+          type: 'chunk',
+          payload: {
+            modelUsed: recommendation.modelName,
+            modelAlreadyLoaded: true,
+            isStart: true,
+          },
+        });
+      }
 
       if (this.contextManager.shouldCompact(maxContext, compactionThreshold)) {
         this.postMessage({

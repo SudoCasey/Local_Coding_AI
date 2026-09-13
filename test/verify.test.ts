@@ -15,7 +15,7 @@ import {
   isWriteActionAllowlisted,
   normalizeWriteActionType,
 } from '../src/services/writePermissionPolicy';
-import { parseAgentResponse, stripWrappingMarkdownFence, looksLikeWorkspaceTask } from '../src/services/agentProtocol';
+import { parseAgentResponse, stripWrappingMarkdownFence, looksLikeWorkspaceTask, unwrapModelEnvelope } from '../src/services/agentProtocol';
 import { ChangeTracker } from '../src/services/changeTracker';
 import { OllamaModelInfo } from '../src/types';
 
@@ -254,6 +254,29 @@ console.log(1);
 export const x = 1;
 <<<END>>>`);
   assert((rawWrite.toolCalls[0] as any).content.includes('export const x = 1;'), 'Unfenced WRITE content unchanged');
+
+  const trailingFence = parseAgentResponse(`<<<WRITE path="src/app.css">>>
+body { color: red; }
+\`\`\`
+<<<END>>>`);
+  const trailingBody = (trailingFence.toolCalls[0] as any).content;
+  assert(trailingBody.includes('body { color: red; }'), 'WRITE keeps CSS when a fence is appended');
+  assert(!trailingBody.includes('```'), 'WRITE strips trailing fence closer');
+
+  const jsonInner = '<<<LIST path=".">>>\nI will inspect the workspace.';
+  const jsonEnvelope = parseAgentResponse('```json\n' + JSON.stringify({ response: jsonInner }) + '\n```');
+  assert(
+    jsonEnvelope.toolCalls.length === 1 && jsonEnvelope.toolCalls[0].kind === 'list',
+    'JSON envelope still parses LIST protocol'
+  );
+  assert(
+    jsonEnvelope.displayText.includes('I will inspect the workspace.'),
+    'JSON envelope shows inner assistant text'
+  );
+  assert(!jsonEnvelope.displayText.trim().startsWith('{'), 'JSON wrapper is not shown as the chat body');
+
+  const unwrapped = unwrapModelEnvelope('{"response":"Hello from the model."}');
+  assert(unwrapped === 'Hello from the model.', 'unwrapModelEnvelope extracts response string');
 
   const mdKeep = stripWrappingMarkdownFence('```bash\necho hi\n```\n', 'README.md');
   assert(mdKeep.includes('```bash'), 'Markdown file keeps intentional bash fence');

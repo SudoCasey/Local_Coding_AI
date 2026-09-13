@@ -85,6 +85,18 @@ const promptInput = document.getElementById('prompt-input') as HTMLTextAreaEleme
 const btnSend = document.getElementById('btn-send') as HTMLButtonElement;
 const btnStop = document.getElementById('btn-stop') as HTMLButtonElement;
 
+let stickToBottom = true;
+let isAutoScrolling = false;
+
+chatContainer.addEventListener('scroll', () => {
+  if (isAutoScrolling) {
+    return;
+  }
+  const gap =
+    chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight;
+  stickToBottom = gap < 72;
+});
+
 // Event Listeners
 modelSelect.addEventListener('change', () => {
   const selected = modelSelect.value;
@@ -401,7 +413,7 @@ function sendMessage(): void {
   currentAssistantText = '';
   currentAssistantMessageEl = createAssistantMessageElement();
   chatContainer.appendChild(currentAssistantMessageEl);
-  scrollToBottom();
+  pinChatToBottom();
 
   vscode.postMessage({
     type: 'sendMessage',
@@ -449,7 +461,7 @@ function appendUserMessage(text: string, attached: Attachment[]): void {
   msgDiv.appendChild(body);
 
   chatContainer.appendChild(msgDiv);
-  scrollToBottom();
+  pinChatToBottom();
 }
 
 function createAssistantMessageElement(): HTMLElement {
@@ -478,8 +490,20 @@ function removeWelcomeBox(): void {
   }
 }
 
+function pinChatToBottom(): void {
+  stickToBottom = true;
+  scrollToBottom();
+}
+
 function scrollToBottom(): void {
+  if (!stickToBottom) {
+    return;
+  }
+  isAutoScrolling = true;
   chatContainer.scrollTop = chatContainer.scrollHeight;
+  requestAnimationFrame(() => {
+    isAutoScrolling = false;
+  });
 }
 
 function flushMarkdownRender(): void {

@@ -93,7 +93,88 @@ export function stripWrappingMarkdownFence(raw: string, relPath: string = ''): s
     }
     content = next;
   }
-  return content;
+  return stripTrailingMarkdownFences(content, relPath);
+}
+
+/** Drop leftover fence closer/opener lines at the end of non-markdown files. */
+export function stripTrailingMarkdownFences(raw: string, relPath: string = ''): string {
+  const ext = fileExtension(relPath);
+  if (MARKDOWN_EXTS.has(ext)) {
+    return String(raw ?? '');
+  }
+  const original = String(raw ?? '');
+  const endedWithNewline = /\r?\n$/.test(original);
+  const lines = original.split('\n');
+  while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+    lines.pop();
+  }
+  let changed = false;
+  while (lines.length > 0) {
+    const t = lines[lines.length - 1].trim();
+    if (t === '```' || /^```[a-zA-Z0-9_+-]*$/.test(t)) {
+      lines.pop();
+      changed = true;
+      while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+        lines.pop();
+      }
+      continue;
+    }
+    break;
+  }
+  if (!changed) {
+    return original;
+  }
+  let out = lines.join('\n');
+  if (endedWithNewline && out.length > 0 && !/\r?\n$/.test(out)) {
+    out += '\n';
+  }
+  return out;
+}
+
+/**
+ * Qwen and similar models sometimes wrap the whole reply in JSON
+ * (`{"response":"..."}`) or a json code fence. Unwrap so protocol blocks
+ * and chat text can be parsed.
+ */
+export function unwrapModelEnvelope(raw: string): string {
+  let text = String(raw ?? '').trim();
+  if (!text) {
+    return String(raw ?? '');
+  }
+  for (let i = 0; i < 3; i++) {
+    const fenced = text.match(/^```(?:json)?\s*\r?\n([\s\S]*?)\r?\n```$/i);
+    if (fenced) {
+      text = fenced[1].trim();
+      continue;
+    }
+    break;
+  }
+  const obj = tryParseJsonObject(text);
+  if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+    const inner = [obj.response, obj.message, obj.content, obj.text].find(
+      (v) => typeof v === 'string' && v.trim().length > 0
+    ) as string | undefined;
+    if (inner) {
+      return unwrapModelEnvelope(inner);
+    }
+  }
+  return text === String(raw ?? '').trim() ? String(raw ?? '') : text;
+}
+
+function tryParseJsonObject(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function unwrapOnce(content: string, relPath: string): string {
@@ -153,7 +234,7 @@ function unwrapOnce(content: string, relPath: string): string {
 export function parseAgentResponse(raw: string): ParsedAgentResponse {
   const toolCalls: AgentToolCall[] = [];
   const statusLines: string[] = [];
-  let text = raw || '';
+  let text = unwrapModelEnvelope(raw || '');
 
   text = text.replace(READ_RE, (_m, p1: string) => {
     const path = normalizeRelPath(p1);
@@ -244,7 +325,7 @@ export function looksLikeWorkspaceTask(prompt: string): boolean {
 }
 
 export const NO_TOOLS_NUDGE =
-  'You replied without using LIST, READ, SEARCH/REPLACE, or WRITE. Inspect the open workspace with LIST and READ, then apply the user request with SEARCH/REPLACE or WRITE. Do not ask the user to describe the project. Do not refuse.';
+  'You replied without using LIST, READ, SEARCH/REPLACE, or WRITE. Inspect the open workspace with LIST and READ, then apply the user request with SEARCH/REPLACE or WRITE. Reply in plain assistant text plus those protocol blocks — never wrap the reply in JSON or a json code block. Do not ask the user to describe the project. Do not refuse.';
 
 export const AGENT_PROTOCOL_INSTRUCTIONS = `
 FILE & EXECUTION PROTOCOL:
@@ -272,7 +353,8 @@ Rules:
 1. For project work, start with LIST and READ. Never ask the user to describe the repo, app, or current files — look them up.
 2. When asked to change, fix, improve, audit, or clean the project, apply edits with SEARCH/REPLACE or WRITE in this turn. Do not refuse. Do not reply with only a request for more context.
 3. Prefer SEARCH/REPLACE for edits. Use WRITE for new files or full rewrites.
-4. Inside WRITE and REPLACE, emit only the file source. Do not wrap it in a markdown code block (no triple-backtick language tag before the code). The host already has the path and will strip wrappers if you add them.
-5. Use RUN only when a command must execute. Never claim a command ran unless you emitted RUN.
-6. After tool results, keep going until the task is done.
+4. Inside WRITE and REPLACE, emit only the file source. Do not wrap it in a markdown code block (no triple-backtick language tag before the code, and do not end the file with a fence closer). The host already has the path and will strip wrappers if you add them.
+5. Reply in plain assistant prose plus the protocol blocks. Never wrap your answer in JSON (no object with a "response" key) and never put the whole reply in a json code block.
+6. Use RUN only when a command must execute. Never claim a command ran unless you emitted RUN.
+7. After tool results, keep going until the task is done.
 `.trim();

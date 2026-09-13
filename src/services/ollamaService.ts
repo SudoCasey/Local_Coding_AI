@@ -278,10 +278,13 @@ export class OllamaService {
   }
 
   /**
-   * Keep the target model loaded. Unload other runners only when switching models.
-   * Does nothing if the target is already in VRAM.
+   * Keep the target model loaded. Unload other runners only when switching models,
+   * and wait until they actually leave /api/ps so a 7B load is not blocked by 1.5B.
    */
-  public async ensureModelSlot(targetModel: string): Promise<{ alreadyLoaded: boolean }> {
+  public async ensureModelSlot(
+    targetModel: string,
+    onStatus?: (status: string) => void
+  ): Promise<{ alreadyLoaded: boolean }> {
     const running = await this.getRunningModels();
     const alreadyLoaded = running.some((r) =>
       modelNamesMatch(r.name || r.model, targetModel)
@@ -289,12 +292,34 @@ export class OllamaService {
     if (alreadyLoaded) {
       return { alreadyLoaded: true };
     }
-    for (const r of running) {
-      await Promise.race([
-        this.unloadModel(r.name || r.model),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 4000)),
-      ]);
+
+    const others = running.filter((r) => !modelNamesMatch(r.name || r.model, targetModel));
+    if (others.length === 0) {
+      return { alreadyLoaded: false };
     }
+
+    for (const r of others) {
+      const name = r.name || r.model;
+      onStatus?.(`Unloading ${name} so ${targetModel} can load…`);
+      await this.unloadModel(name);
+    }
+
+    const deadline = Date.now() + 25000;
+    while (Date.now() < deadline) {
+      const still = await this.getRunningModels();
+      const blocking = still.filter((r) => !modelNamesMatch(r.name || r.model, targetModel));
+      if (blocking.length === 0) {
+        onStatus?.(`Loading ${targetModel} into VRAM…`);
+        return { alreadyLoaded: false };
+      }
+      for (const r of blocking) {
+        onStatus?.(`Still unloading ${r.name || r.model}…`);
+        await this.unloadModel(r.name || r.model);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    onStatus?.(`Loading ${targetModel}…`);
     return { alreadyLoaded: false };
   }
 
@@ -509,11 +534,13 @@ export class OllamaService {
    */
   public async unloadModel(modelName: string): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/generate`, {
+      const response = await this.fetchWithTimeout(`${this.baseUrl}/api/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000,
         body: JSON.stringify({
           model: modelName,
+          prompt: '',
+          stream: false,
           keep_alive: 0,
         }),
       });

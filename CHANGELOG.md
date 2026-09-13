@@ -4,6 +4,24 @@ All notable changes to **Local Coding AI** are documented here.
 Released builds are published as `local-coding-ai-X.X.X.vsix` on
 [GitHub Releases](https://github.com/SudoCasey/Local_Coding_AI/releases).
 
+## [0.3.4] — 2026-09-13
+
+### Summary
+
+Switching from 1.5B to 7B waits until the smaller model is actually unloaded.
+JSON-wrapped replies are unwrapped so file edits apply. Trailing markdown
+fences are stripped from writes, and the chat sidebar no longer jumps to the
+bottom while you are scrolled up.
+
+### Changes
+
+- Unload a loaded 1.5B runner and wait until it leaves VRAM before loading 7B
+- Unwrap JSON / json-code-block envelopes so LIST/READ/WRITE still run
+- Strip leftover fence closer lines at the end of non-markdown file writes
+- Keep the chat scroll position when the user has scrolled up during streaming
+
+**Download:** [local-coding-ai-0.3.4.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.4/local-coding-ai-0.3.4.vsix)
+
 ## [0.3.3] — 2026-09-13
 
 ### Summary
