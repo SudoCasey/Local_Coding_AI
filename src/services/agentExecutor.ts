@@ -1,6 +1,7 @@
 import {
   AgentToolCall,
   formatToolResultsForModel,
+  NO_TOOLS_NUDGE,
   parseAgentResponse,
 } from './agentProtocol';
 import { ChangeTracker } from './changeTracker';
@@ -20,6 +21,8 @@ export interface AgentLoopOptions {
   onVisibleChunk: (chunk: string) => void;
   onStatus?: (status: string) => void;
   abortSignal?: AbortSignal;
+  /** If the first reply has no tools, nudge the model to inspect and edit the workspace. */
+  nudgeIfNoTools?: boolean;
 }
 
 export interface AgentLoopResult {
@@ -61,7 +64,10 @@ export class AgentExecutor {
       );
 
       const parsed = parseAgentResponse(rawRound);
-      if (parsed.displayText) {
+      const shouldNudge =
+        Boolean(options.nudgeIfNoTools) && rounds === 1 && parsed.toolCalls.length === 0;
+
+      if (parsed.displayText && !shouldNudge) {
         const piece =
           visibleAssistantText.length > 0
             ? `\n\n${parsed.displayText}`
@@ -75,6 +81,12 @@ export class AgentExecutor {
       }
 
       if (parsed.toolCalls.length === 0) {
+        if (shouldNudge) {
+          options.onStatus?.('Inspecting workspace…');
+          workingMessages.push({ role: 'assistant', content: rawRound });
+          workingMessages.push({ role: 'user', content: NO_TOOLS_NUDGE });
+          continue;
+        }
         if (!visibleAssistantText.trim()) {
           visibleAssistantText = parsed.displayText || rawRound.trim();
           if (visibleAssistantText && !parsed.displayText) {

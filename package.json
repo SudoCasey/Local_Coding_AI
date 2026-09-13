@@ -2,7 +2,7 @@
   "name": "local-coding-ai",
   "displayName": "Local Coding AI",
   "description": "Completely offline, local VS Code coding AI assistant powered by Ollama and open-weight models.",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "local-coding-ai",
   "author": {
     "name": "Casey Friedrich",

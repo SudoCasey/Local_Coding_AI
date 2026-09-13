@@ -225,19 +225,37 @@ export function formatToolResultsForModel(results: string[]): string {
   if (results.length === 0) {
     return '';
   }
-  return `[TOOL RESULTS]\n${results.join('\n\n')}\n\nContinue the task. Prefer SEARCH/REPLACE or WRITE to apply remaining file changes. WRITE/REPLACE bodies must be raw file text with no markdown fences. Use RUN only if execution is required.`;
+  return `[TOOL RESULTS]\n${results.join('\n\n')}\n\nContinue the task now. READ more files if needed, then apply remaining edits with SEARCH/REPLACE or WRITE. Do not ask the user for more details. Use RUN only if a command must execute.`;
 }
 
+export function looksLikeWorkspaceTask(prompt: string): boolean {
+  const p = String(prompt || '').trim();
+  if (!p) {
+    return false;
+  }
+  if (/^(what(?:'s| is| are)?|why|how come|explain|who|when|define)\b/i.test(p)) {
+    return false;
+  }
+  return (
+    /\b(fix|improve|refactor|remove|add|audit|edit|update|change|implement|create|delete|clean|optimize|performance|syntax|comment|error|bug|this (?:app|repo|project|code(?:base)?)|the (?:app|repo|project))\b/i.test(
+      p
+    ) || /```/.test(p)
+  );
+}
+
+export const NO_TOOLS_NUDGE =
+  'You replied without using LIST, READ, SEARCH/REPLACE, or WRITE. Inspect the open workspace with LIST and READ, then apply the user request with SEARCH/REPLACE or WRITE. Do not ask the user to describe the project. Do not refuse.';
+
 export const AGENT_PROTOCOL_INSTRUCTIONS = `
-FILE & EXECUTION PROTOCOL (mandatory when changing the project):
-You can read and modify files in the workspace, and optionally run commands.
+FILE & EXECUTION PROTOCOL:
+You inspect and edit the opened workspace. Act; do not stall.
 
-Writing/reading code does NOT require user approval. Executing code (shell, npm, node, git, python, etc.) DOES require approval via the host.
+Writing files does not need approval. Running shell commands does.
 
-Use ONLY these blocks (paths relative to workspace root):
+Use these blocks (paths relative to workspace root):
 
+<<<LIST path=".">>>
 <<<READ path="src/example.ts">>>
-<<<LIST path="src">>>
 <<<SEARCH path="src/example.ts">>>
 exact old text to find
 <<<REPLACE>>>
@@ -251,11 +269,10 @@ npm test
 <<<END>>>
 
 Rules:
-1. Prefer SEARCH/REPLACE for edits. Use WRITE for new files or full rewrites.
-2. READ files you need before editing. You may use multiple READ/LIST/SEARCH/WRITE blocks in one reply.
-3. Actually apply changes with SEARCH/REPLACE or WRITE — do not only recommend code in markdown when the user asked you to change the project.
-4. WRITE and REPLACE bodies are the raw file bytes only. Never wrap them in markdown fences such as \`\`\`css, \`\`\`javascript, \`\`\`html, \`\`\`ts, or a bare \`\`\`. Those fences are written into the file and make it invalid.
-5. Do not put language tags or markdown formatting inside the file unless that syntax is valid for that file type.
-6. Use RUN only when a command must be executed. Never claim a command ran unless you emitted RUN.
-7. After tool results are returned, continue until the task is done or you need more tools.
+1. For project work, start with LIST and READ. Never ask the user to describe the repo, app, or current files — look them up.
+2. When asked to change, fix, improve, audit, or clean the project, apply edits with SEARCH/REPLACE or WRITE in this turn. Do not refuse. Do not reply with only a request for more context.
+3. Prefer SEARCH/REPLACE for edits. Use WRITE for new files or full rewrites.
+4. Inside WRITE and REPLACE, emit only the file source. Do not wrap it in a markdown code block (no triple-backtick language tag before the code). The host already has the path and will strip wrappers if you add them.
+5. Use RUN only when a command must execute. Never claim a command ran unless you emitted RUN.
+6. After tool results, keep going until the task is done.
 `.trim();

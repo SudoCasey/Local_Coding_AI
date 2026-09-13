@@ -4,6 +4,23 @@ All notable changes to **Local Coding AI** are documented here.
 Released builds are published as `local-coding-ai-X.X.X.vsix` on
 [GitHub Releases](https://github.com/SudoCasey/Local_Coding_AI/releases).
 
+## [0.3.2] — 2026-09-13
+
+### Summary
+
+The assistant acts on the open workspace instead of refusing or asking for
+more details. Wrapping markdown fences are still stripped from file writes.
+
+### Changes
+
+- Stop 7B refusals caused by naming markdown fence tokens in the system prompt
+- Instruct the model to LIST/READ the workspace and apply edits, not stall
+- Attach a workspace file index to project requests
+- If the first reply has no tools, nudge the model to inspect and edit
+- Keep stripping wrapping markdown fences from WRITE and REPLACE bodies
+
+**Download:** [local-coding-ai-0.3.2.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.2/local-coding-ai-0.3.2.vsix)
+
 ## [0.3.1] — 2026-09-13
 
 ### Summary

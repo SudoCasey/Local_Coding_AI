@@ -13,6 +13,7 @@ import {
 import { clampContextWindow } from '../services/ollamaUrlPolicy';
 import { AgentExecutor } from '../services/agentExecutor';
 import { ChangeTracker } from '../services/changeTracker';
+import { looksLikeWorkspaceTask } from '../services/agentProtocol';
 import {
   WritePermissionMode,
   WritePermissionService,
@@ -490,9 +491,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         content: m.content,
       }));
 
+      if (this.workspaceService.getWorkspaceRoot()) {
+        try {
+          const tree = await this.workspaceService.getWorkspaceFileTree(80);
+          const lastUser = [...inferenceMessages].reverse().find((m) => m.role === 'user');
+          if (lastUser) {
+            lastUser.content = `${lastUser.content}\n\n[WORKSPACE FILES]\n${tree}\nUse LIST/READ on these paths as needed. Do not ask the user to describe the repo.`;
+          }
+        } catch {
+          // File index is helpful but not required.
+        }
+      }
+
       const agentResult = await this.agentExecutor.runAgentLoop(inferenceMessages, {
         model: recommendation.modelName,
         abortSignal: this.abortController.signal,
+        nudgeIfNoTools: looksLikeWorkspaceTask(rawPrompt),
         onVisibleChunk: (chunk: string) => {
           this.postMessage({
             type: 'chunk',

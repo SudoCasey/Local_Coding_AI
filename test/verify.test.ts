@@ -14,7 +14,7 @@ import {
   isWriteActionAllowlisted,
   normalizeWriteActionType,
 } from '../src/services/writePermissionPolicy';
-import { parseAgentResponse, stripWrappingMarkdownFence } from '../src/services/agentProtocol';
+import { parseAgentResponse, stripWrappingMarkdownFence, looksLikeWorkspaceTask } from '../src/services/agentProtocol';
 import { ChangeTracker } from '../src/services/changeTracker';
 import { OllamaModelInfo } from '../src/types';
 
@@ -251,6 +251,17 @@ export const x = 1;
   const mdUnwrap = stripWrappingMarkdownFence('```markdown\n# Title\n```\n', 'README.md');
   assert(mdUnwrap.includes('# Title'), 'Wrapped markdown document unwraps');
   assert(!mdUnwrap.includes('```markdown'), 'Outer markdown fence stripped');
+
+  assert(looksLikeWorkspaceTask('Fix the ```css in this repo'), 'Fence-fix prompt is a workspace task');
+  assert(looksLikeWorkspaceTask('Improve this app'), 'Improve-app prompt is a workspace task');
+  assert(looksLikeWorkspaceTask('Remove comments from this repo'), 'Remove-comments prompt is a workspace task');
+  assert(looksLikeWorkspaceTask('audit this repo for syntax errors'), 'Audit prompt is a workspace task');
+  assert(!looksLikeWorkspaceTask('what is the syntax for a typescript interface?'), 'Trivia question is not a workspace task');
+
+  const promptText = ctxManager.getSystemPrompt();
+  assert(!promptText.includes('```css'), 'System prompt does not name css fences (avoids 7b refusals)');
+  assert(!promptText.includes('```javascript'), 'System prompt does not name javascript fences');
+  assert(promptText.includes('Do not ask the user'), 'System prompt tells the model not to stall for details');
 
   console.log('\n--- Testing Change Tracker ---');
   const tracker = new ChangeTracker();
