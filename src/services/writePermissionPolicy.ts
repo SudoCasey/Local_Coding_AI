@@ -32,7 +32,7 @@ export function describeWriteAction(actionType: string): string {
     case 'insert':
       return 'Insert at Cursor';
     default:
-      return `${actionType} …`;
+      return `Run ${actionType} …`;
   }
 }
 

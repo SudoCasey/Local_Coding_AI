@@ -14,6 +14,8 @@ import {
   isWriteActionAllowlisted,
   normalizeWriteActionType,
 } from '../src/services/writePermissionPolicy';
+import { parseAgentResponse } from '../src/services/agentProtocol';
+import { ChangeTracker } from '../src/services/changeTracker';
 import { OllamaModelInfo } from '../src/types';
 
 function assert(condition: boolean, message: string) {
@@ -179,10 +181,46 @@ async function runTests() {
     normalizeWriteActionType('shell', '"C:\\Program Files\\nodejs\\npm.cmd" install') === 'npm',
     'Windows npm.cmd path → npm'
   );
-  assert(describeWriteAction('npm') === 'npm …', 'Shell family describes with ellipsis');
+  assert(describeWriteAction('npm') === 'Run npm …', 'Shell family describes as Run …');
   assert(isWriteActionAllowlisted('npm', ['apply', 'npm']), 'Allowlisted npm is allowed');
   assert(!isWriteActionAllowlisted('node', ['apply', 'npm']), 'Non-allowlisted node is blocked');
   assert(isWriteActionAllowlisted('Apply', ['apply']), 'Allowlist match is case-insensitive');
+
+  console.log('\n--- Testing Agent Protocol ---');
+  const parsed = parseAgentResponse(`I'll update the file.
+<<<READ path="src/a.ts">>>
+<<<SEARCH path="src/a.ts">>>
+old
+<<<REPLACE>>>
+new
+<<<END>>>
+<<<RUN>>>
+npm test
+<<<END>>>
+Done.`);
+  assert(parsed.toolCalls.length === 3, 'Parsed read, search_replace, and run');
+  assert(parsed.toolCalls[0].kind === 'read', 'First tool is read');
+  assert(
+    parsed.toolCalls[1].kind === 'search_replace' &&
+      (parsed.toolCalls[1] as any).search.includes('old'),
+    'Search/replace captured'
+  );
+  assert(
+    parsed.toolCalls[2].kind === 'run' && (parsed.toolCalls[2] as any).command === 'npm test',
+    'RUN command captured'
+  );
+  assert(!parsed.displayText.includes('<<<READ'), 'Protocol markers stripped from display');
+  assert(parsed.displayText.includes("I'll update the file."), 'Display keeps prose');
+
+  console.log('\n--- Testing Change Tracker ---');
+  const tracker = new ChangeTracker();
+  const batchId = tracker.startBatch();
+  tracker.recordWrite(batchId, 'src/a.ts', 'old', 'new');
+  tracker.recordWrite(batchId, 'src/b.ts', null, 'created');
+  assert(tracker.listChangedPaths(batchId).join(',') === 'src/a.ts,src/b.ts', 'Lists changed paths');
+  const undoRecords = tracker.takeBatchForUndo(batchId);
+  assert(undoRecords.length === 2, 'Undo returns both records');
+  assert(tracker.listChangedPaths(batchId).length === 0, 'Batch removed after undo take');
 
   console.log('\nAll verification tests passed successfully!');
 }

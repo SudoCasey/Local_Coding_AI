@@ -1,4 +1,5 @@
 import { ChatMessage, CompactedContextResult } from '../types';
+import { AGENT_PROTOCOL_INSTRUCTIONS } from './agentProtocol';
 import { OllamaService } from './ollamaService';
 
 export class ContextManager {
@@ -17,9 +18,13 @@ export class ContextManager {
       `You are an expert local AI software engineering assistant running inside VS Code.
 You write clean, secure, idiomatic, and high-performance code across all web development stacks (HTML, CSS, JavaScript, TypeScript, React, Next.js, Node.js, PHP, SQL) and general programming languages (Python, Go, Rust, C++).
 - Always be concise, helpful, and technically accurate.
-- Provide complete code snippets when writing or modifying code.
+- When the user asks you to change the project, APPLY the edits yourself using the FILE & EXECUTION PROTOCOL below. Do not stop at recommendations or “here is the code to paste.”
+- Prefer reading related files first, then editing across as many files as needed for a correct project-wide change.
+- Provide complete code when writing or modifying files via WRITE / SEARCH+REPLACE.
 - If referencing files or code, maintain the exact names, paths, and patterns used in the workspace.
-- Avoid unnecessary conversational filler. Focus on working, production-ready solutions.`;
+- Avoid unnecessary conversational filler. Focus on working, production-ready solutions.
+
+${AGENT_PROTOCOL_INSTRUCTIONS}`;
 
     this.buildSystemPrompt();
   }

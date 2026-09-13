@@ -2,7 +2,7 @@
   "name": "local-coding-ai",
   "displayName": "Local Coding AI",
   "description": "Completely offline, local VS Code coding AI assistant powered by Ollama and open-weight models.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "local-coding-ai",
   "author": {
     "name": "Casey Friedrich",
@@ -269,11 +269,11 @@
           "type": "string",
           "enum": ["allowlist", "runEverything"],
           "enumDescriptions": [
-            "Require approval for write actions. Run once, or Add to Allowlist for that action type (apply, insert, npm, node, …).",
-            "Allow all write actions without asking."
+            "Require approval before the assistant executes commands (npm, git, node, …). Writing/editing files never needs approval.",
+            "Allow command execution without asking. File writes are always automatic."
           ],
           "default": "allowlist",
-          "description": "How the assistant handles actions that write changes (Apply to File, Insert, shell-style commands)."
+          "description": "How the assistant handles code execution. Writing files is always allowed in-workspace; only running commands is gated."
         },
         "localCodingAI.writeAllowlist": {
           "type": "array",
@@ -281,7 +281,7 @@
             "type": "string"
           },
           "default": [],
-          "description": "Action types allowed without prompting when writePermissionMode is Allowlist (e.g. apply, insert, npm, node)."
+          "description": "Command/executor families allowed without prompting when writePermissionMode is Allowlist (e.g. npm, git, node)."
         }
       }
     }

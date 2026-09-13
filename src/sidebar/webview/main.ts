@@ -619,7 +619,6 @@ function renderCodeBlock(lang: string, code: string): string {
         <div class="code-actions">
           <button class="code-btn" data-action="copy" data-code="${rawBase64}">Copy</button>
           <button class="code-btn" data-action="insert" data-code="${rawBase64}">Insert</button>
-          <button class="code-btn" data-action="apply" data-code="${rawBase64}">Apply to File</button>
         </div>
       </div>
       <pre><code class="language-${escapeHtml(lang)}">${escapedCode}</code></pre>
@@ -658,8 +657,6 @@ document.addEventListener('click', (e) => {
     setTimeout(() => (btn.textContent = orig), 1500);
   } else if (action === 'insert') {
     vscode.postMessage({ type: 'insertCodeAtCursor', payload: { code } });
-  } else if (action === 'apply') {
-    vscode.postMessage({ type: 'applyCodeToEditor', payload: { code } });
   }
 });
 
@@ -985,16 +982,80 @@ window.addEventListener('message', (event) => {
         }
       }
 
-      if (message.payload.status && currentAssistantMessageEl && !currentAssistantText) {
+      if (message.payload.status && currentAssistantMessageEl) {
         const body = currentAssistantMessageEl.querySelector('.message-body');
-        if (body) {
+        if (body && !currentAssistantText) {
           body.innerHTML = `<em>${escapeHtml(message.payload.status)}</em>`;
+        } else {
+          let statusEl = currentAssistantMessageEl.querySelector(
+            '.agent-status-line'
+          ) as HTMLElement | null;
+          if (!statusEl) {
+            statusEl = document.createElement('div');
+            statusEl.className = 'agent-status-line';
+            currentAssistantMessageEl.appendChild(statusEl);
+          }
+          statusEl.textContent = message.payload.status;
         }
       }
 
       if (message.payload.chunk) {
         currentAssistantText += message.payload.chunk;
+        const statusEl = currentAssistantMessageEl?.querySelector('.agent-status-line');
+        statusEl?.remove();
         scheduleMarkdownRender();
+      }
+      break;
+    }
+
+    case 'filesChanged': {
+      const files: string[] = Array.isArray(message.payload?.files)
+        ? message.payload.files
+        : [];
+      const batchId = String(message.payload?.batchId || '');
+      if (files.length === 0 || !batchId) {
+        break;
+      }
+      const card = document.createElement('div');
+      card.className = 'files-changed-card';
+      card.dataset.batchId = batchId;
+      card.innerHTML = `
+        <div class="files-changed-title">Files changed</div>
+        <ul class="files-changed-list">
+          ${files.map((f) => `<li><code>${escapeHtml(f)}</code></li>`).join('')}
+        </ul>
+        <button type="button" class="files-undo-btn" data-batch="${escapeHtml(batchId)}">
+          Undo these changes
+        </button>
+      `;
+      const undoBtn = card.querySelector('.files-undo-btn') as HTMLButtonElement;
+      undoBtn?.addEventListener('click', () => {
+        undoBtn.disabled = true;
+        undoBtn.textContent = 'Undoing…';
+        vscode.postMessage({
+          type: 'undoFileChanges',
+          payload: { batchId },
+        });
+      });
+      chatContainer.appendChild(card);
+      scrollToBottom();
+      break;
+    }
+
+    case 'filesUndone': {
+      const batchId = String(message.payload?.batchId || '');
+      const card = chatContainer.querySelector(
+        `.files-changed-card[data-batch-id="${batchId.replace(/"/g, '')}"]`
+      ) as HTMLElement | null;
+      if (card) {
+        const restored: string[] = Array.isArray(message.payload?.restored)
+          ? message.payload.restored
+          : [];
+        card.innerHTML = `<div class="files-changed-title">Undone</div>
+          <ul class="files-changed-list">
+            ${restored.map((f) => `<li><code>${escapeHtml(f)}</code></li>`).join('') || '<li>(none)</li>'}
+          </ul>`;
+        card.classList.add('undone');
       }
       break;
     }

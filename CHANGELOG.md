@@ -4,7 +4,27 @@ All notable changes to **Local Coding AI** are documented here.
 Released builds are published as `local-coding-ai-X.X.X.vsix` on
 [GitHub Releases](https://github.com/SudoCasey/Local_Coding_AI/releases).
 
+## [0.3.0] — 2026-09-13
+
+### Summary
+
+The assistant can read and edit multiple workspace files itself (no Allowlist for
+writing code), then list changed files with Undo. Command execution (`npm`,
+`git`, `node`, …) still requires Allowlist approval.
+
+### Changes
+
+- Agentic multi-file edits via READ / LIST / SEARCH+REPLACE / WRITE protocol
+- File writes apply automatically inside the workspace (no Allowlist prompts)
+- Per-prompt **Files changed** card with **Undo these changes**
+- `<<<RUN>>>` command execution stays Allowlist-gated (`npm`, `git`, `node`, …)
+- Removed per-block **Apply to File** buttons (Copy / Insert remain)
+- Sidebar control renamed to **AI execution** (writing vs running)
+
+**Download:** [local-coding-ai-0.3.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.0/local-coding-ai-0.3.0.vsix)
+
 ## [0.2.0] — 2026-09-13
+
 
 ### Summary
 

@@ -130,7 +130,8 @@ export interface WebviewToExtensionMessage {
     | 'toggleSidebarPosition'
     | 'openSettings'
     | 'setWritePermissionMode'
-    | 'manageWritePermissions';
+    | 'manageWritePermissions'
+    | 'undoFileChanges';
   payload?: any;
 }
 
@@ -153,6 +154,8 @@ export interface ExtensionToWebviewMessage {
     | 'vramFreed'
     | 'ramFreed'
     | 'contextAttached'
-    | 'writePermissionState';
+    | 'writePermissionState'
+    | 'filesChanged'
+    | 'filesUndone';
   payload?: any;
 }

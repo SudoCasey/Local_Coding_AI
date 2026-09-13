@@ -93,10 +93,10 @@ export class WritePermissionService {
 
     const label = describeWriteAction(actionType);
     const lines = [
-      `Allow write action: ${label}?`,
+      `Allow code execution: ${label}?`,
       '',
       'Run — allow once; ask again next time.',
-      'Add to Allowlist — always allow this action type.',
+      'Add to Allowlist — always allow this executor family.',
     ];
     if (detail) {
       lines.push('', detail);
@@ -115,7 +115,7 @@ export class WritePermissionService {
     }
     if (choice === 'Add to Allowlist') {
       await this.addToAllowlist(actionType);
-      vscode.window.showInformationMessage(`Added "${label}" to the write allowlist.`);
+      vscode.window.showInformationMessage(`Added "${label}" to the execution allowlist.`);
       return true;
     }
     return false;
@@ -129,16 +129,16 @@ export class WritePermissionService {
       {
         id: 'mode-allowlist',
         label: mode === 'allowlist' ? '$(check) Mode: Allowlist' : 'Mode: Allowlist',
-        description: 'Approve each write action type unless allowlisted',
+        description: 'Approve command execution unless allowlisted (file writes never need approval)',
       },
       {
         id: 'mode-runEverything',
         label: mode === 'runEverything' ? '$(check) Mode: Run everything' : 'Mode: Run everything',
-        description: 'No permission prompts for write actions',
+        description: 'No prompts for command execution',
       },
       {
         id: 'sep',
-        label: 'Allowlisted action types',
+        label: 'Allowlisted executors',
         kind: vscode.QuickPickItemKind.Separator,
       },
     ];
@@ -147,7 +147,7 @@ export class WritePermissionService {
       items.push({
         id: 'empty',
         label: '(none yet)',
-        description: 'Approve an action with “Add to Allowlist” to populate this list',
+        description: 'Approve a command with “Add to Allowlist” to populate this list',
       });
     } else {
       for (const entry of allowlist) {
@@ -165,8 +165,8 @@ export class WritePermissionService {
     }
 
     const picked = await vscode.window.showQuickPick(items, {
-      title: 'AI Write Permissions',
-      placeHolder: 'Choose mode or manage allowlisted action types',
+      title: 'AI Execution Permissions',
+      placeHolder: 'Choose mode or manage allowlisted executors',
     });
     if (!picked || picked.id === 'empty' || picked.id === 'sep') {
       return;
@@ -181,14 +181,14 @@ export class WritePermissionService {
     }
     if (picked.id === 'clear') {
       await this.clearAllowlist();
-      vscode.window.showInformationMessage('Write allowlist cleared.');
+      vscode.window.showInformationMessage('Execution allowlist cleared.');
       return;
     }
     if (picked.id.startsWith('remove:')) {
       const actionType = picked.id.slice('remove:'.length);
       await this.removeFromAllowlist(actionType);
       vscode.window.showInformationMessage(
-        `Removed "${describeWriteAction(actionType)}" from allowlist.`
+        `Removed "${describeWriteAction(actionType)}" from execution allowlist.`
       );
     }
   }

@@ -11,8 +11,9 @@ import {
   WebviewToExtensionMessage,
 } from '../types';
 import { clampContextWindow } from '../services/ollamaUrlPolicy';
+import { AgentExecutor } from '../services/agentExecutor';
+import { ChangeTracker } from '../services/changeTracker';
 import {
-  normalizeWriteActionType,
   WritePermissionMode,
   WritePermissionService,
 } from '../services/writePermission';
@@ -28,6 +29,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private modelRouter: ModelRouter;
   private workspaceService: WorkspaceService;
   private writePermissions: WritePermissionService;
+  private changeTracker = new ChangeTracker();
+  private agentExecutor: AgentExecutor;
   private abortController?: AbortController;
   private activePulls: Map<string, AbortController> = new Map();
   private refreshTimer?: ReturnType<typeof setTimeout>;
@@ -45,6 +48,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     this.modelRouter = modelRouter;
     this.workspaceService = workspaceService;
     this.writePermissions = writePermissions || new WritePermissionService();
+    this.agentExecutor = new AgentExecutor(
+      this.workspaceService,
+      this.writePermissions,
+      this.changeTracker
+    );
   }
 
   public resolveWebviewView(
@@ -309,26 +317,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         break;
 
       case 'applyCodeToEditor': {
-        const code = String(message.payload?.code || '');
-        if (!code) {
-          break;
-        }
-        const actionType = normalizeWriteActionType('apply');
-        if (!this.writePermissions.isAllowed(actionType)) {
-          await this.workspaceService.showDiffPreview(code, 'Proposed Apply');
-        }
-        const allowed = await this.writePermissions.requestPermission(
-          actionType,
-          'This replaces the entire active file contents.'
+        vscode.window.showInformationMessage(
+          'File edits are applied automatically by the assistant. Use Undo on the change list if needed.'
         );
-        if (!allowed) {
-          break;
-        }
-        const ok = await this.workspaceService.applyCodeToActiveFile(code);
-        if (ok) {
-          vscode.window.showInformationMessage('Code applied to active editor.');
-          this.postWritePermissionState();
-        }
         break;
       }
 
@@ -337,17 +328,33 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         if (!code) {
           break;
         }
-        const actionType = normalizeWriteActionType('insert');
-        const allowed = await this.writePermissions.requestPermission(
-          actionType,
-          'This inserts the code block at the current cursor position.'
-        );
-        if (!allowed) {
+        // Inserting text is writing, not executing — no Allowlist.
+        await this.workspaceService.insertAtCursor(code);
+        break;
+      }
+
+      case 'undoFileChanges': {
+        const batchId = String(message.payload?.batchId || '');
+        if (!batchId) {
           break;
         }
-        const ok = await this.workspaceService.insertAtCursor(code);
-        if (ok) {
-          this.postWritePermissionState();
+        const result = await this.agentExecutor.undoBatch(batchId);
+        this.postMessage({
+          type: 'filesUndone',
+          payload: {
+            batchId,
+            restored: result.restored,
+            errors: result.errors,
+          },
+        });
+        if (result.errors.length === 0) {
+          vscode.window.showInformationMessage(
+            `Undid changes to ${result.restored.length} file(s).`
+          );
+        } else {
+          vscode.window.showWarningMessage(
+            `Undo finished with issues: ${result.errors.join('; ')}`
+          );
         }
         break;
       }
@@ -478,40 +485,62 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     try {
       await this.ollamaService.ensureModelSlot(recommendation.modelName);
       const messagesToSend = this.contextManager.prepareMessagesForInference();
+      const inferenceMessages = messagesToSend.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
 
-      let assistantResponse = '';
-      await this.ollamaService.chatStream(
-        recommendation.modelName,
-        messagesToSend,
-        {
-          num_gpu: gpuLayers,
-          num_ctx: maxContext,
-          temperature,
-        },
-        keepAlive,
-        (chunk: string) => {
-          assistantResponse += chunk;
+      const agentResult = await this.agentExecutor.runAgentLoop(inferenceMessages, {
+        model: recommendation.modelName,
+        abortSignal: this.abortController.signal,
+        onVisibleChunk: (chunk: string) => {
           this.postMessage({
             type: 'chunk',
             payload: { chunk },
           });
         },
-        this.abortController.signal,
-        (status: string) => {
+        onStatus: (status: string) => {
           this.postMessage({
             type: 'chunk',
             payload: { status },
           });
-        }
-      );
+        },
+        chatStream: async (messages, onChunk, onStatus) => {
+          return this.ollamaService.chatStream(
+            recommendation.modelName,
+            messages.map((m) => ({
+              role: m.role as ChatMessage['role'],
+              content: m.content,
+            })),
+            {
+              num_gpu: gpuLayers,
+              num_ctx: maxContext,
+              temperature,
+            },
+            keepAlive,
+            onChunk,
+            this.abortController?.signal,
+            onStatus
+          );
+        },
+      });
 
-      // Save complete assistant response
       this.contextManager.addMessage({
         role: 'assistant',
-        content: assistantResponse,
+        content: agentResult.visibleAssistantText,
         model: recommendation.modelName,
         timestamp: Date.now(),
       });
+
+      if (agentResult.changedPaths.length > 0) {
+        this.postMessage({
+          type: 'filesChanged',
+          payload: {
+            batchId: agentResult.batchId,
+            files: agentResult.changedPaths,
+          },
+        });
+      }
 
       this.postMessage({
         type: 'complete',
@@ -1012,19 +1041,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       </div>
 
       <div class="write-perm-row">
-        <label for="write-perm-select" class="write-perm-label" title="Control how write actions (Apply, Insert, shell families like npm/node) are approved">
-          AI writes
+        <label for="write-perm-select" class="write-perm-label" title="Allowlist requires approval before executing commands (npm, git, node, …). Writing files never needs approval.">
+          AI execution
         </label>
-        <select id="write-perm-select" title="Allowlist requires approval; Run everything skips prompts">
+        <select id="write-perm-select" title="Allowlist: approve command execution. Run everything: skip execution prompts. File writes are always automatic.">
           <option value="allowlist">Allowlist</option>
           <option value="runEverything">Run everything</option>
         </select>
-        <button id="btn-manage-allowlist" class="icon-button" type="button" title="Manage write allowlist">
+        <button id="btn-manage-allowlist" class="icon-button" type="button" title="Manage execution allowlist">
           <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
             <path d="M8 1a4 4 0 0 0-4 4v1.09A2.5 2.5 0 0 0 2 8.5V13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8.5a2.5 2.5 0 0 0-2-2.41V5a4 4 0 0 0-4-4zm-2.5 5V5a2.5 2.5 0 0 1 5 0v1h-5z"/>
           </svg>
         </button>
-        <span id="write-allowlist-count" class="write-allowlist-count" title="Allowlisted action types">0</span>
+        <span id="write-allowlist-count" class="write-allowlist-count" title="Allowlisted execution families">0</span>
       </div>
 
       <!-- Auto Mode Role Models -->

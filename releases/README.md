@@ -18,15 +18,22 @@ Full change history: [`CHANGELOG.md`](../CHANGELOG.md)
 
 | Version | Download | Summary |
 | :--- | :--- | :--- |
-| **0.2.0** | [local-coding-ai-0.2.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.2.0/local-coding-ai-0.2.0.vsix) | Allowlist / Run everything write-permission modes for Apply, Insert, and similar action types |
+| **0.3.0** | [local-coding-ai-0.3.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.0/local-coding-ai-0.3.0.vsix) | Agentic multi-file edits + Undo; Allowlist only for command execution |
+| **0.2.0** | [local-coding-ai-0.2.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.2.0/local-coding-ai-0.2.0.vsix) | Allowlist / Run everything modes for AI actions |
 | **0.1.1** | [local-coding-ai-0.1.1.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.1/local-coding-ai-0.1.1.vsix) | Fixes Windows Ollama hang/flash for larger models; security + efficiency hardening |
 | **0.1.0** | [local-coding-ai-0.1.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.1.0/local-coding-ai-0.1.0.vsix) | Initial public release — Auto mode, context limits, model pulls, resource cleanup |
 
-**Latest:** [local-coding-ai-0.2.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.2.0/local-coding-ai-0.2.0.vsix)
+**Latest:** [local-coding-ai-0.3.0.vsix](https://github.com/SudoCasey/Local_Coding_AI/releases/download/v0.3.0/local-coding-ai-0.3.0.vsix)
+
+### 0.3.0
+
+The assistant can read and edit multiple workspace files itself (no Allowlist for writing code), then list changed files with Undo. Command execution (`npm`, `git`, `node`, …) still requires Allowlist approval.
+
+Details: [`v0.3.0.md`](./v0.3.0.md)
 
 ### 0.2.0
 
-Adds Allowlist / Run everything write-permission modes so users control whether Apply, Insert, and similar write action types need approval — with one-shot Run or persistent Add to Allowlist.
+Adds Allowlist / Run everything modes so users control whether command execution needs approval — with one-shot Run or persistent Add to Allowlist.
 
 Details: [`v0.2.0.md`](./v0.2.0.md)
 
@@ -45,20 +52,20 @@ Details: [`v0.1.0.md`](./v0.1.0.md)
 ## Install
 
 ```powershell
-code --install-extension .\local-coding-ai-0.2.0.vsix
+code --install-extension .\local-coding-ai-0.3.0.vsix
 ```
 
 Or: VS Code → **Extensions** → `⋯` → **Install from VSIX…**
 
 ## Publish a new release (maintainers)
 
-1. Bump `"version"` in `package.json` (e.g. `0.2.0` → `0.2.1`).
+1. Bump `"version"` in `package.json` (e.g. `0.3.0` → `0.3.1`).
 2. Add a `releases/vX.X.X.md` notes file with **Summary** + **Changes**, and update [`CHANGELOG.md`](../CHANGELOG.md), this file, and the main [`README.md`](../README.md) Releases section.
 3. Commit, push, and tag:
 
 ```powershell
-git tag v0.2.1
-git push origin v0.2.1
+git tag v0.3.1
+git push origin v0.3.1
 ```
 
 4. The [`release` workflow](../.github/workflows/release.yml) builds the VSIX and publishes a GitHub Release using `releases/vX.X.X.md` as the release body.

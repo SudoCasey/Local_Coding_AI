@@ -142,6 +142,61 @@ body {
   opacity: 0.85;
 }
 
+.agent-status-line {
+  font-size: 11px;
+  color: var(--fg-secondary);
+  font-style: italic;
+  margin-top: 4px;
+  padding: 0 2px;
+}
+
+.files-changed-card {
+  margin: 8px 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.files-changed-card.undone {
+  opacity: 0.75;
+}
+
+.files-changed-title {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.files-changed-list {
+  margin: 0 0 8px 16px;
+  padding: 0;
+  font-size: 11px;
+}
+
+.files-changed-list code {
+  font-size: 11px;
+}
+
+.files-undo-btn {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--fg-primary);
+  cursor: pointer;
+}
+
+.files-undo-btn:hover:not(:disabled) {
+  border-color: var(--accent-color);
+}
+
+.files-undo-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* Pull Model Input & Dropdown */
 .pull-model-panel {
   display: flex;

@@ -1,4 +1,6 @@
+import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import * as vscode from 'vscode';
 
 export interface ActiveEditorContext {
@@ -10,6 +12,15 @@ export interface ActiveEditorContext {
   fullContent?: string;
   cursorLine?: number;
   totalLines?: number;
+}
+
+export interface WorkspaceCommandResult {
+  ok: boolean;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut?: boolean;
+  error?: string;
 }
 
 export class WorkspaceService {
@@ -203,5 +214,266 @@ export class WorkspaceService {
     }
 
     return files.map((f) => vscode.workspace.asRelativePath(f)).join('\n');
+  }
+
+  /**
+   * Resolve a workspace-relative path to an absolute path, or undefined if outside root / no workspace.
+   */
+  public resolveWorkspacePath(relPath: string): { absPath: string; relPath: string } | undefined {
+    const root = this.getWorkspaceRoot();
+    if (!root) {
+      return undefined;
+    }
+    const cleaned = String(relPath || '')
+      .trim()
+      .replace(/\\/g, '/')
+      .replace(/^\.\/+/, '')
+      .replace(/^\/+/, '');
+    if (cleaned.includes('\0')) {
+      return undefined;
+    }
+    if (!cleaned || cleaned === '.') {
+      return { absPath: root, relPath: '.' };
+    }
+    const absPath = path.resolve(root, cleaned);
+    if (!this.isPathWithinWorkspace(absPath)) {
+      return undefined;
+    }
+    return { absPath, relPath: path.relative(root, absPath).replace(/\\/g, '/') };
+  }
+
+  public async readWorkspaceFile(
+    relPath: string
+  ): Promise<{ ok: true; path: string; content: string } | { ok: false; error: string }> {
+    const resolved = this.resolveWorkspacePath(relPath);
+    if (!resolved) {
+      return { ok: false, error: `Path blocked or outside workspace: ${relPath}` };
+    }
+    try {
+      const content = await fsp.readFile(resolved.absPath, 'utf8');
+      return { ok: true, path: resolved.relPath, content };
+    } catch (err: any) {
+      return { ok: false, error: `Failed to read ${resolved.relPath}: ${err?.message || err}` };
+    }
+  }
+
+  public async listWorkspaceDir(
+    relPath: string = '.',
+    maxEntries: number = 80
+  ): Promise<{ ok: true; path: string; entries: string } | { ok: false; error: string }> {
+    const target = relPath.trim() === '' || relPath.trim() === '.' ? '.' : relPath;
+    const resolved = this.resolveWorkspacePath(target === '.' ? './' : target);
+    // Allow listing workspace root
+    const root = this.getWorkspaceRoot();
+    if (!root) {
+      return { ok: false, error: 'No workspace folder open.' };
+    }
+    const absPath =
+      target === '.' ? root : resolved?.absPath;
+    const displayPath = target === '.' ? '.' : resolved?.relPath;
+    if (!absPath || displayPath === undefined) {
+      return { ok: false, error: `Path blocked or outside workspace: ${relPath}` };
+    }
+    try {
+      const dirents = await fsp.readdir(absPath, { withFileTypes: true });
+      const lines: string[] = [];
+      for (const d of dirents.slice(0, maxEntries)) {
+        if (d.name === 'node_modules' || d.name === '.git' || d.name === 'dist') {
+          continue;
+        }
+        lines.push(`${d.isDirectory() ? 'dir' : 'file'}\t${d.name}`);
+      }
+      if (dirents.length > maxEntries) {
+        lines.push(`… (${dirents.length - maxEntries} more omitted)`);
+      }
+      return { ok: true, path: displayPath, entries: lines.join('\n') || '(empty)' };
+    } catch (err: any) {
+      return { ok: false, error: `Failed to list ${displayPath}: ${err?.message || err}` };
+    }
+  }
+
+  /**
+   * Write a file inside the workspace. Returns previous content (null if new file).
+   */
+  public async writeWorkspaceFile(
+    relPath: string,
+    content: string
+  ): Promise<
+    | { ok: true; path: string; before: string | null; created: boolean }
+    | { ok: false; error: string }
+  > {
+    const resolved = this.resolveWorkspacePath(relPath);
+    if (!resolved) {
+      return { ok: false, error: `Path blocked or outside workspace: ${relPath}` };
+    }
+    try {
+      let before: string | null = null;
+      let created = false;
+      try {
+        before = await fsp.readFile(resolved.absPath, 'utf8');
+      } catch {
+        created = true;
+        before = null;
+      }
+      await fsp.mkdir(path.dirname(resolved.absPath), { recursive: true });
+      await fsp.writeFile(resolved.absPath, content, 'utf8');
+
+      // Refresh editor if open
+      const uri = vscode.Uri.file(resolved.absPath);
+      const openDoc = vscode.workspace.textDocuments.find(
+        (d) => d.uri.fsPath.toLowerCase() === resolved.absPath.toLowerCase()
+      );
+      if (openDoc && !openDoc.isDirty) {
+        await vscode.workspace.openTextDocument(uri);
+      }
+
+      return { ok: true, path: resolved.relPath, before, created };
+    } catch (err: any) {
+      return { ok: false, error: `Failed to write ${resolved.relPath}: ${err?.message || err}` };
+    }
+  }
+
+  public async applySearchReplace(
+    relPath: string,
+    search: string,
+    replace: string
+  ): Promise<
+    | { ok: true; path: string; before: string; after: string }
+    | { ok: false; error: string }
+  > {
+    const read = await this.readWorkspaceFile(relPath);
+    if (!read.ok) {
+      return read;
+    }
+    if (!search) {
+      return { ok: false, error: `Empty SEARCH block for ${read.path}` };
+    }
+    if (!read.content.includes(search)) {
+      return {
+        ok: false,
+        error: `SEARCH text not found in ${read.path}. Ensure the SEARCH block matches the file exactly.`,
+      };
+    }
+    const after = read.content.replace(search, replace);
+    const wrote = await this.writeWorkspaceFile(read.path, after);
+    if (!wrote.ok) {
+      return wrote;
+    }
+    return { ok: true, path: read.path, before: read.content, after };
+  }
+
+  public async deleteWorkspaceFile(
+    relPath: string
+  ): Promise<{ ok: true; path: string } | { ok: false; error: string }> {
+    const resolved = this.resolveWorkspacePath(relPath);
+    if (!resolved) {
+      return { ok: false, error: `Path blocked or outside workspace: ${relPath}` };
+    }
+    try {
+      await fsp.unlink(resolved.absPath);
+      return { ok: true, path: resolved.relPath };
+    } catch (err: any) {
+      return { ok: false, error: `Failed to delete ${resolved.relPath}: ${err?.message || err}` };
+    }
+  }
+
+  /**
+   * Run a shell command with cwd = workspace root. Does not check Allowlist — caller must.
+   */
+  public async runWorkspaceCommand(
+    command: string,
+    options?: { timeoutMs?: number; abortSignal?: AbortSignal }
+  ): Promise<WorkspaceCommandResult> {
+    const root = this.getWorkspaceRoot();
+    if (!root) {
+      return {
+        ok: false,
+        exitCode: null,
+        stdout: '',
+        stderr: '',
+        error: 'No workspace folder open.',
+      };
+    }
+    const timeoutMs = options?.timeoutMs ?? 60000;
+    const isWin = process.platform === 'win32';
+    const shell = isWin ? process.env.ComSpec || 'cmd.exe' : '/bin/bash';
+    const args = isWin ? ['/d', '/s', '/c', command] : ['-lc', command];
+
+    return new Promise((resolve) => {
+      let settled = false;
+      let stdout = '';
+      let stderr = '';
+      let timedOut = false;
+
+      const child = spawn(shell, args, {
+        cwd: root,
+        env: process.env,
+        windowsHide: true,
+        shell: false,
+      });
+
+      const timer = setTimeout(() => {
+        timedOut = true;
+        try {
+          child.kill();
+        } catch {
+          // ignore
+        }
+      }, timeoutMs);
+
+      const finish = (result: WorkspaceCommandResult) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+      };
+
+      options?.abortSignal?.addEventListener('abort', () => {
+        try {
+          child.kill();
+        } catch {
+          // ignore
+        }
+        finish({
+          ok: false,
+          exitCode: null,
+          stdout,
+          stderr,
+          error: 'Command aborted.',
+        });
+      });
+
+      child.stdout?.on('data', (chunk) => {
+        stdout += String(chunk);
+        if (stdout.length > 200_000) {
+          stdout = stdout.slice(0, 200_000) + '\n…(truncated)';
+        }
+      });
+      child.stderr?.on('data', (chunk) => {
+        stderr += String(chunk);
+        if (stderr.length > 100_000) {
+          stderr = stderr.slice(0, 100_000) + '\n…(truncated)';
+        }
+      });
+      child.on('error', (err) => {
+        finish({
+          ok: false,
+          exitCode: null,
+          stdout,
+          stderr,
+          error: err.message,
+        });
+      });
+      child.on('close', (code) => {
+        finish({
+          ok: !timedOut && code === 0,
+          exitCode: code,
+          stdout,
+          stderr,
+          timedOut,
+          error: timedOut ? `Command timed out after ${timeoutMs}ms` : undefined,
+        });
+      });
+    });
   }
 }
